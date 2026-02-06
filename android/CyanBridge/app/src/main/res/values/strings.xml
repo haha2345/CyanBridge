@@ -34,4 +34,19 @@
     <string name="battery_opt_still_on_toast">Battery optimization still appears to be ON. Please disable it, then tap \"I Disabled It\" again.</string>
     <string name="battery_opt_not_supported">Battery optimization settings are not available on this Android version.</string>
     <string name="battery_opt_cant_open_settings">Could not open settings on this device.</string>
+
+    <string name="ai_vision_mvp_button">AI 识图 MVP（拍照→拿图→预览）</string>
+    <string name="ai_vision_preview_title">图片预览</string>
+    <string name="ai_vision_preview_back">返回</string>
+    <string name="ai_vision_preview_hint">仅预览本次获取的图片（返回后会删除临时文件）</string>
+    <string name="ai_vision_preview_missing_path">未获取到图片路径</string>
+    <string name="ai_vision_preview_file_missing">图片文件不存在</string>
+    <string name="ai_vision_preview_decode_failed">图片解码失败</string>
+
+    <string name="ai_vision_recognize_button">识别</string>
+    <string name="ai_vision_recognize_initial">点击“识别”开始上传图片并获取识别结果</string>
+    <string name="ai_vision_recognize_in_progress">识别中…</string>
+    <string name="ai_vision_recognize_done">识别完成</string>
+    <string name="ai_vision_recognize_missing_key">未配置 DASHSCOPE_API_KEY（请在 local.properties 中设置）</string>
+    <string name="ai_vision_recognize_failed">识别失败</string>
 </resources>

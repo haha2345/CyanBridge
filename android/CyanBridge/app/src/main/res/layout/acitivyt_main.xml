@@ -199,6 +199,16 @@
                     android:textColor="@color/text_secondary"/>
             </LinearLayout>
 
+            <Button
+                android:id="@+id/btn_ai_vision_mvp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ai_vision_mvp_button"
+                android:backgroundTint="@color/card_bg"
+                android:textColor="@color/cyan_accent"
+                android:layout_marginTop="8dp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+
             <!-- SECTION: DEVICE INFO -->
             <TextView
                 android:layout_width="wrap_content"

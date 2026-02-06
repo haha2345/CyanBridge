@@ -1,6 +1,20 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+}
+
+def localProps = new Properties()
+def localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+def localPropStr = { String key, String defVal ->
+    def v = (localProps.getProperty(key) ?: defVal)
+    // Escape for buildConfigField string literal
+    return v.replace("\\", "\\\\").replace("\"", "\\\"")
 }
 
 android {
@@ -13,6 +27,25 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "1.0.2"
+
+        // MVP voice pipeline config (put secrets in local.properties, not in git)
+        // local.properties:
+        //   OPENAI_API_KEY=...
+        //   OPENAI_BASE_URL=https://api.openai.com
+        //   OPENAI_CHAT_MODEL=gpt-4o-mini
+        //   OPENAI_TRANSCRIBE_MODEL=whisper-1
+        buildConfigField "String", "OPENAI_API_KEY", "\"${localPropStr("OPENAI_API_KEY", "")}\""
+        buildConfigField "String", "OPENAI_BASE_URL", "\"${localPropStr("OPENAI_BASE_URL", "https://api.openai.com")}\""
+        buildConfigField "String", "OPENAI_CHAT_MODEL", "\"${localPropStr("OPENAI_CHAT_MODEL", "gpt-4o-mini")}\""
+        buildConfigField "String", "OPENAI_TRANSCRIBE_MODEL", "\"${localPropStr("OPENAI_TRANSCRIBE_MODEL", "whisper-1")}\""
+
+        // Aliyun DashScope (Vision Understanding) config (put secrets in local.properties, not in git)
+        // local.properties:
+        //   DASHSCOPE_API_KEY=...
+        // Optional override:
+        //   DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com
+        buildConfigField "String", "DASHSCOPE_API_KEY", "\"${localPropStr("DASHSCOPE_API_KEY", "")}\""
+        buildConfigField "String", "DASHSCOPE_BASE_URL", "\"${localPropStr("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com")}\""
 
         vectorDrawables {
             useSupportLibrary = true
@@ -38,6 +71,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 }
 

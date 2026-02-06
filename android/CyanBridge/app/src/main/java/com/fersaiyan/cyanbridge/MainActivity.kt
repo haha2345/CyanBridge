@@ -83,6 +83,10 @@ import android.speech.tts.TextToSpeech
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Context
+import android.graphics.BitmapFactory
+
+import com.fersaiyan.cyanbridge.voice.GlassesVoiceChatMvp
+import com.fersaiyan.cyanbridge.voice.OpenAiClient
 
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
@@ -124,6 +128,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var isImageAssistantMode = true // Use assistant vs share intent
     private var aiAssistantMode = "Gemini" // "Gemini" or "ChatGPT"
 
+    // AI Vision MVP state (capture -> getPictureThumbnails -> preview page)
+    private var aiVisionMvpJob: Job? = null
+    private val aiVisionMvpTimeoutMs = 30_000L
+    private var aiVisionMvpPhotoSignal: CompletableDeferred<Unit>? = null
+
     // State used by the BLE+WiFi P2P data-download flow
     private var downloadP2pConnected = false
     private var downloadBleIp: String? = null
@@ -146,6 +155,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private val batteryPollIntervalMs = 60_000L
     private var pendingBatteryToast = false
     private var batteryCallbackRegistered = false
+
+    private val voiceChatMvp by lazy {
+        GlassesVoiceChatMvp(
+            context = this,
+            openAi = OpenAiClient(),
+            speak = ::speak,
+            onStatus = ::voiceStatus,
+        )
+    }
+
+    private fun voiceStatus(message: String) {
+        Log.i("VoiceMVP", message)
+        runOnUiThread {
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -184,6 +209,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        aiVisionMvpJob?.cancel()
+        voiceChatMvp.shutdown()
         tts?.stop()
         tts?.shutdown()
     }
@@ -285,9 +312,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             binding.btnModeChatgpt,
             binding.btnModeTasker,
             binding.btnTestHijackVoice,
-            binding.btnTestHijackImage
+            binding.btnTestHijackImage,
+            binding.btnAiVisionMvp
         ) {
             when (this) {
+                binding.btnAiVisionMvp -> {
+                    startAiVisionMvp()
+                }
+
                 binding.btnTestHijackVoice -> {
                     triggerAssistantVoiceQuery()
                 }
@@ -508,6 +540,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         binding.btnModeChatgpt.setTextColor(if (aiAssistantMode == "ChatGPT") ContextCompat.getColor(this, R.color.cyan_accent) else ContextCompat.getColor(this, R.color.text_secondary))
         binding.btnModeTasker.setTextColor(if (aiAssistantMode == "Tasker") ContextCompat.getColor(this, R.color.cyan_accent) else ContextCompat.getColor(this, R.color.text_secondary))
 
+        binding.cbHijackEnabled.isChecked = isAiHijackEnabled
         binding.cbHijackEnabled.setOnCheckedChangeListener { _, isChecked ->
 
             isAiHijackEnabled = isChecked
@@ -2039,6 +2072,188 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
+    private fun startAiVisionMvp() {
+        if (!BleOperateManager.getInstance().isConnected) {
+            Toast.makeText(this, "请先连接眼镜（BLE）", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (aiVisionMvpJob?.isActive == true) {
+            Toast.makeText(this, "正在获取图片，请稍候…", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        binding.btnAiVisionMvp.isEnabled = false
+
+        val outDir = File(cacheDir, "ai_vision_mvp").apply { mkdirs() }
+        val outFile = File(outDir, "ai_${System.currentTimeMillis()}.jpg")
+
+        Log.i("AiVisionMvp", "Starting capture -> thumbnails flow, out=${outFile.absolutePath}")
+        Toast.makeText(this, "正在拍照并获取缩略图…", Toast.LENGTH_SHORT).show()
+
+        aiVisionMvpJob = CoroutineScope(Dispatchers.IO).launch {
+            val photoSignal = CompletableDeferred<Unit>()
+            aiVisionMvpPhotoSignal = photoSignal
+
+            val buf = ByteArrayOutputStream()
+            val done = CompletableDeferred<Boolean>()
+            var hadData = false
+            var chunkCount = 0
+
+            try {
+                // Trigger "smart picture recognition / thumbnail capture" as documented in the SDK PDF:
+                // glassesControl([0x02,0x01,0x06, thumbnailSize, thumbnailSize, 0x02])
+                val thumbnailSize = 0x02 // 0..6
+                val captureAck = CompletableDeferred<Int?>()
+                LargeDataHandler.getInstance().glassesControl(
+                    byteArrayOf(
+                        0x02,
+                        0x01,
+                        0x06,
+                        thumbnailSize.toByte(),
+                        thumbnailSize.toByte(),
+                        0x02
+                    )
+                ) { _, resp ->
+                    Log.i(
+                        "AiVisionMvp",
+                        "capture glassesControl[0x02,0x01,0x06,...] -> dataType=${resp.dataType}, error=${resp.errorCode}, workTypeIng=${resp.workTypeIng}"
+                    )
+                    if (!captureAck.isCompleted) {
+                        captureAck.complete(resp.errorCode)
+                    }
+                }
+
+                val captureErr = withTimeoutOrNull(1500L) { captureAck.await() }
+                if (captureErr != null && captureErr != 0) {
+                    // Observed behavior: some firmwares return error=-1 even though they
+                    // still send the AI-photo notify and stream thumbnail bytes fine.
+                    // Treat this as informational only; success is determined by notify + chunks.
+                    Log.i(
+                        "AiVisionMvp",
+                        "capture command ack error=$captureErr (common/benign); continue waiting for notify/chunks"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w("AiVisionMvp", "Failed to trigger capture command: ${e.message}")
+            }
+
+            try {
+                // Some firmwares only start thumbnail streaming after a camera/AI-photo notify arrives.
+                // Wait briefly for a signal, but do not hard-fail if the notify is missing.
+                val gotSignal = withTimeoutOrNull(12_000L) { photoSignal.await() } != null
+                if (!gotSignal) {
+                    Log.w("AiVisionMvp", "Did not receive photo signal notify in time; still attempting thumbnails")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "未收到拍照事件，仍尝试获取图片…", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    // Give the glasses a short moment to prepare the thumbnail payload.
+                    delay(700)
+                }
+
+                // Start receiving thumbnail chunks (JPEG) from the SDK.
+                LargeDataHandler.getInstance().getPictureThumbnails { _, isComplete, data ->
+                    if (done.isCompleted || aiVisionMvpJob?.isActive != true) return@getPictureThumbnails
+
+                    if (data != null && data.isNotEmpty()) {
+                        hadData = true
+                        chunkCount++
+                        if (chunkCount == 1) {
+                            Log.i("AiVisionMvp", "thumbnail first chunk size=${data.size}")
+                        }
+                        try {
+                            buf.write(data)
+                        } catch (e: Exception) {
+                            Log.e("AiVisionMvp", "Failed to append thumbnail chunk: ${e.message}")
+                            done.complete(false)
+                            return@getPictureThumbnails
+                        }
+                    }
+
+                    if (isComplete) {
+                        Log.i(
+                            "AiVisionMvp",
+                            "thumbnail complete chunks=$chunkCount bytes=${buf.size()} hadData=$hadData"
+                        )
+                        done.complete(hadData)
+                    }
+                }
+
+                val result = withTimeoutOrNull(aiVisionMvpTimeoutMs) { done.await() }
+                if (result == null) {
+                    Log.e("AiVisionMvp", "Thumbnail capture timed out (hadData=$hadData, chunks=$chunkCount)")
+                    withContext(Dispatchers.Main) {
+                        binding.btnAiVisionMvp.isEnabled = true
+                        Toast.makeText(this@MainActivity, "获取图片超时，请重试", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                if (result != true) {
+                    Log.e("AiVisionMvp", "Thumbnail capture finished but no data received")
+                    withContext(Dispatchers.Main) {
+                        binding.btnAiVisionMvp.isEnabled = true
+                        Toast.makeText(this@MainActivity, "未收到图片数据，请重试", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val bytes = buf.toByteArray()
+                if (bytes.isEmpty()) {
+                    Log.e("AiVisionMvp", "Thumbnail capture completed but buffer empty")
+                    withContext(Dispatchers.Main) {
+                        binding.btnAiVisionMvp.isEnabled = true
+                        Toast.makeText(this@MainActivity, "未收到图片数据", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (decoded == null) {
+                    Log.e("AiVisionMvp", "Received bytes but failed to decode bitmap (size=${bytes.size})")
+                    withContext(Dispatchers.Main) {
+                        binding.btnAiVisionMvp.isEnabled = true
+                        Toast.makeText(this@MainActivity, "图片解码失败", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                try {
+                    FileOutputStream(outFile).use { it.write(bytes) }
+                } catch (e: Exception) {
+                    Log.e("AiVisionMvp", "Failed to write image file: ${e.message}", e)
+                    withContext(Dispatchers.Main) {
+                        binding.btnAiVisionMvp.isEnabled = true
+                        Toast.makeText(this@MainActivity, "保存图片失败", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                Log.i("AiVisionMvp", "Image ready: ${outFile.absolutePath} (${outFile.length()} bytes)")
+                withContext(Dispatchers.Main) {
+                    binding.btnAiVisionMvp.isEnabled = true
+                    com.fersaiyan.cyanbridge.ui.AiVisionPreviewActivity.start(
+                        this@MainActivity,
+                        outFile.absolutePath
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("AiVisionMvp", "Failed AI vision MVP flow: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    binding.btnAiVisionMvp.isEnabled = true
+                    Toast.makeText(this@MainActivity, "获取图片失败：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                aiVisionMvpPhotoSignal = null
+                try {
+                    buf.close()
+                } catch (_: Exception) {
+                    // ignore
+                }
+            }
+        }
+    }
+
     private fun exitTransferModeAfterDownload() {
         if (!BleOperateManager.getInstance().isConnected) {
             Log.w("DataDownload", "Skip exit transfer mode: BLE not connected")
@@ -2440,8 +2655,29 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     val changing = response.loadData[8].toInt()
                     handleBatteryReport(battery, changing == 1)
                 }
+                // Glasses photo-related notify (observed on some firmwares after shutter)
+                0x01 -> {
+                    if (aiVisionMvpJob?.isActive == true) {
+                        Log.i("DeviceNotify", "Photo signal notify received (AiVisionMvp in progress)")
+                        aiVisionMvpPhotoSignal?.let { signal ->
+                            if (!signal.isCompleted) {
+                                signal.complete(Unit)
+                            }
+                        }
+                    }
+                }
                 //Glasses pass quick recognition / AI Photo
                 0x02 -> {
+                    if (aiVisionMvpJob?.isActive == true) {
+                        val b9 = response.loadData.getOrNull(9)?.toInt()
+                        Log.i("DeviceNotify", "AI Photo notify received (AiVisionMvp in progress), b9=$b9")
+                        aiVisionMvpPhotoSignal?.let { signal ->
+                            if (!signal.isCompleted) {
+                                signal.complete(Unit)
+                            }
+                        }
+                        return
+                    }
                     Log.i("DeviceNotify", "AI Photo Button Pressed - Starting Chunked Download")
                     val fileName = "AI_Thumb_${System.currentTimeMillis()}.jpg"
                     val file = File(getExternalFilesDir("DCIM"), fileName)
@@ -2472,14 +2708,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         if (isAiHijackEnabled) {
                             triggerAssistantVoiceQuery()
                         } else {
-                            //The glasses activate the microphone to start speaking
-                            runOnUiThread {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "Glasses microphone activated (Original Path)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                            // Original-path MVP: use BLE audio stream -> STT -> LLM -> print + TTS
+                            voiceChatMvp.toggle()
                         }
                     }
                 }
