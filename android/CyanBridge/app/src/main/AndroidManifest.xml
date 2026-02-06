@@ -68,6 +68,11 @@
             android:exported="false"
             android:label="@string/ai_vision_preview_title" />
         <activity
+            android:name=".ui.chat.ChatActivity"
+            android:exported="false"
+            android:label="AI 对话"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+        <activity
             android:name=".ui.BatteryOptimizationGuideActivity"
             android:exported="false"
             android:label="@string/battery_opt_title" />

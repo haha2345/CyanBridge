@@ -21,6 +21,11 @@ import kotlin.properties.Delegates
  * "Programs should be written for other people to read,
  * and only incidentally for machines to execute"
  */
+/**
+ * 应用入口：
+ * - 初始化 BLE
+ * - 初始化对话引擎与全局 TTS 播放
+ */
 class MyApplication : Application(){
 
     var hardwareVersion: String = ""
@@ -32,6 +37,9 @@ class MyApplication : Application(){
         instance = this
         CONTEXT = applicationContext
         initBle()
+        com.fersaiyan.cyanbridge.chat.ChatEngine.init(this)
+        // Global auto-play for assistant replies (works even outside ChatActivity).
+        com.fersaiyan.cyanbridge.chat.ChatPlaybackManager.start()
     }
     private fun initBle() {
         initReceiver()

@@ -62,6 +62,7 @@ import java.net.Socket
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.SocketFactory
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.security.SecureRandom
 import androidx.core.content.FileProvider
@@ -87,17 +88,31 @@ import android.graphics.BitmapFactory
 
 import com.fersaiyan.cyanbridge.voice.GlassesVoiceChatMvp
 import com.fersaiyan.cyanbridge.voice.OpenAiClient
+import com.fersaiyan.cyanbridge.voice.AliyunAsrWakeSession
+import com.fersaiyan.cyanbridge.chat.ChatEngine
+import com.fersaiyan.cyanbridge.chat.ChatSource
+import com.fersaiyan.cyanbridge.chat.ChatTextParser
+import com.fersaiyan.cyanbridge.ui.chat.ChatActivity
 
 
+/**
+ * 主页面：包含设备连接、ASR 触发与语音相关入口。
+ */
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
 
+    /**
+     * 系统 TTS 初始化回调（用于本地提示播报）。
+     */
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.US
         }
     }
 
+    /**
+     * 播报一段本地 TTS 文本（非云端 TTS）。
+     */
     private fun speak(text: String) {
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
     }
@@ -124,7 +139,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private val deviceNotifyListener by lazy { MyDeviceNotifyListener() }
 
     // AI Hijack settings
-    private var isAiHijackEnabled = true // Default to enabled
+    private var isAiHijackEnabled = false // Default to disabled (safer for wake-word validation)
     private var isImageAssistantMode = true // Use assistant vs share intent
     private var aiAssistantMode = "Gemini" // "Gemini" or "ChatGPT"
 
@@ -165,6 +180,26 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         )
     }
 
+    private val aliyunAsr by lazy {
+        AliyunAsrWakeSession(
+            context = this,
+            onResult = { text ->
+                Log.i("AliAsr", "result=$text")
+                // Keep raw JSON for ChatEngine; it will normalize payload.result.
+                val normalized = ChatTextParser.normalize(text) ?: text
+                ChatEngine.submitUserText(text, ChatSource.ASR)
+                runOnUiThread {
+                    Toast.makeText(this, "ASR: $normalized", Toast.LENGTH_LONG).show()
+                }
+            },
+            onStatus = { message ->
+                Log.i("AliAsr", message)
+            },
+        )
+    }
+
+    private var lastVoiceWakeAtMs: Long = 0L
+
     private fun voiceStatus(message: String) {
         Log.i("VoiceMVP", message)
         runOnUiThread {
@@ -180,6 +215,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         logLargeDataHandlerMethodsOnce()
         // Initialize TTS
         tts = TextToSpeech(this, this)
+
+        binding.wakeText.text = "Wake: --"
         
         // Ensure we always listen for glasses reports (battery, AI, volume, etc.)
         LargeDataHandler.getInstance().addOutDeviceListener(100, deviceNotifyListener)
@@ -210,6 +247,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         super.onDestroy()
         aiVisionMvpJob?.cancel()
+        aliyunAsr.shutdown()
         voiceChatMvp.shutdown()
         tts?.stop()
         tts?.shutdown()
@@ -313,9 +351,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             binding.btnModeTasker,
             binding.btnTestHijackVoice,
             binding.btnTestHijackImage,
-            binding.btnAiVisionMvp
+            binding.btnAiVisionMvp,
+            binding.btnAiChat
         ) {
             when (this) {
+                binding.btnAiChat -> {
+                    startActivity(Intent(this@MainActivity, ChatActivity::class.java))
+                }
+
                 binding.btnAiVisionMvp -> {
                     startAiVisionMvp()
                 }
@@ -805,9 +848,56 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         updateConnectionStatus(event.connect)
         if (event.connect) {
             requestBatteryStatus(showToast = false)
+            syncAiVoiceWakeOnConnect()
         } else {
             updateBatteryText(null)
+            binding.wakeText.text = "Wake: --"
+            aliyunAsr.stop("ble-disconnect")
         }
+    }
+
+    private fun syncAiVoiceWakeOnConnect() {
+        if (!BleOperateManager.getInstance().isConnected) return
+
+        Log.i("VoiceWake", "Querying glasses aiVoiceWake status...")
+        LargeDataHandler.getInstance().aiVoiceWake(false, false) { _, rsp ->
+            val isOpen = rsp?.isOpen ?: false
+            Log.i("VoiceWake", "aiVoiceWake query: isOpen=$isOpen")
+            runOnUiThread {
+                binding.wakeText.text = if (isOpen) "Wake: armed" else "Wake: disabled (enabling...)"
+            }
+
+            if (isOpen) return@aiVoiceWake
+
+            // Validation mode: auto-enable so you can test wake immediately.
+            LargeDataHandler.getInstance().aiVoiceWake(true, true) { _, rsp2 ->
+                val isOpen2 = rsp2?.isOpen ?: false
+                Log.i("VoiceWake", "aiVoiceWake set(true): isOpen=$isOpen2")
+                runOnUiThread {
+                    binding.wakeText.text = if (isOpen2) "Wake: armed" else "Wake: enable failed"
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (isOpen2) "Voice wake enabled on glasses" else "Voice wake enable failed",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun onVoiceWakeTriggered(source: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastVoiceWakeAtMs < 800) return
+        lastVoiceWakeAtMs = now
+
+        val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(now))
+        Log.i("VoiceWake", "WAKE TRIGGERED (source=$source, at=$ts)")
+        runOnUiThread {
+            binding.wakeText.text = "Wake: $ts"
+            Toast.makeText(this@MainActivity, "Wake triggered ($ts)", Toast.LENGTH_SHORT).show()
+        }
+
+        aliyunAsr.start("wake")
     }
 
     private fun startBatteryPolling() {
@@ -2704,12 +2794,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 //Glasses activate microphone / AI button
                 0x03 -> {
                     if (response.loadData[7].toInt() == 1) {
-                        Log.i("DeviceNotify", "AI Button Pressed - Hijacking to Phone Assistant")
+                        onVoiceWakeTriggered("DeviceNotify[0x03]")
+
+                        // Optional follow-up: keep existing hijack mode.
+                        // For validation-only testing, uncheck "Enable Hijack".
                         if (isAiHijackEnabled) {
+                            Log.i("DeviceNotify", "Wake/AI event: Hijacking to Phone Assistant")
                             triggerAssistantVoiceQuery()
                         } else {
-                            // Original-path MVP: use BLE audio stream -> STT -> LLM -> print + TTS
-                            voiceChatMvp.toggle()
+                            Log.i("DeviceNotify", "Wake/AI event: hijack disabled; no further action")
                         }
                     }
                 }

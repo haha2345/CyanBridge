@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Aliyun NUI SDK
+-keep class com.alibaba.idst.nui.*{*;}
+
+# JNI: libjl_opus.so registers native methods on this class at load time.
+-keep class com.jieli.jl_audio_decode.opus.OpusManager { *; }
