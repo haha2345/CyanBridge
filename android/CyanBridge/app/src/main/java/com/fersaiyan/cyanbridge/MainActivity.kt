@@ -2025,6 +2025,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun showDownloadSuccess(message: String) {
+        exitTransferModeAfterDownload()
         cleanupP2pAfterDownload()
         Log.i("DataDownload", "SUCCESS: $message")
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -2036,6 +2037,26 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
         Log.e("DataDownload", "ERROR: $message")
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun exitTransferModeAfterDownload() {
+        if (!BleOperateManager.getInstance().isConnected) {
+            Log.w("DataDownload", "Skip exit transfer mode: BLE not connected")
+            return
+        }
+        Log.i("DataDownload", "Requesting transfer-mode exit (glassesControl[0x02,0x01,0x0F])")
+        try {
+            LargeDataHandler.getInstance().glassesControl(
+                byteArrayOf(0x02, 0x01, 0x0F)
+            ) { _, resp ->
+                Log.i(
+                    "DataDownload",
+                    "exitTransferMode -> dataType=${resp.dataType}, error=${resp.errorCode}"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("DataDownload", "Failed to exit transfer mode: ${e.message}", e)
+        }
     }
 
     private fun isProbablyGroupOwnerIp(ip: String?): Boolean {

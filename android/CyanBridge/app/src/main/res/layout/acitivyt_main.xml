@@ -217,7 +217,16 @@
                 <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content">
                      <Button android:id="@+id/btn_battery" android:layout_weight="1" android:layout_width="0dp" android:layout_height="wrap_content" android:text="Battery" android:backgroundTint="@color/card_bg" android:textColor="@color/purple_200" style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
                      <Space android:layout_width="8dp" android:layout_height="wrap_content"/>
-                     <Button android:id="@+id/btn_version" android:layout_weight="1" android:layout_width="0dp" android:layout_height="wrap_content" android:text="Version" android:backgroundTint="@color/card_bg" android:textColor="@color/purple_200" style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+
+                    <Button
+                        android:id="@+id/btn_version"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:backgroundTint="@color/card_bg"
+                        android:text="Version"
+                        android:textColor="@color/purple_200" />
                 </LinearLayout>
 
                 <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp">
