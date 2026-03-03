@@ -47,6 +47,9 @@ class GlassesRepository private constructor(private val context: Context) {
     private val _connectionState = MutableStateFlow(BleOperateManager.getInstance().isConnected)
     val connectionState: StateFlow<Boolean> = _connectionState.asStateFlow()
 
+    private val _isConnecting = MutableStateFlow(false)
+    val isConnecting: StateFlow<Boolean> = _isConnecting.asStateFlow()
+
     private val _deviceName = MutableStateFlow(prefs.getString(KEY_DEVICE_NAME, null))
     val deviceName: StateFlow<String?> = _deviceName.asStateFlow()
 
@@ -90,6 +93,7 @@ class GlassesRepository private constructor(private val context: Context) {
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun onBluetoothEvent(event: BluetoothEvent) {
         _connectionState.value = event.connect
+        _isConnecting.value = false // Connection attempt resolved
         if (event.connect) {
             val name = DeviceManager.getInstance().deviceName
             _deviceName.value = name
@@ -123,6 +127,7 @@ class GlassesRepository private constructor(private val context: Context) {
     /** Connect to a known device by address. */
     fun connectToDevice(address: String, name: String? = null) {
         Log.i(TAG, "connectToDevice: $address ($name)")
+        _isConnecting.value = true
         if (name != null) {
             saveDevice(name, address)
         }

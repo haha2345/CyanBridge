@@ -13,6 +13,7 @@ class GlassesViewModel(application: Application) : AndroidViewModel(application)
     // ── Exposed State ─────────────────────────────────────────
 
     val isConnected: StateFlow<Boolean> = repo.connectionState
+    val isConnecting: StateFlow<Boolean> = repo.isConnecting
     val deviceName: StateFlow<String?> = repo.deviceName
     val batteryLevel: StateFlow<Int?> = repo.batteryLevel
     val isCharging: StateFlow<Boolean?> = repo.isCharging
