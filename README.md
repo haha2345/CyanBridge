@@ -91,9 +91,10 @@ CyanBridge App
 - 保存到手机相册（DCIM/CyanBridge）
 - 下载进度实时展示 + 文件网格浏览
 
-### 📋 Phase 6 — 用户系统
-- 本地 Mock → 手机号登录
-- 会员体系 + API 配额管理
+### ✅ Phase 6 — 用户系统
+- 本地 Mock → 手机号/邮箱/微信登录（验证码 888888）
+- 会员体系：普通⭐/高级🌟/钻石💎 + 功能权益对比表
+- SharedPreferences 本地持久化
 
 ---
 

@@ -26,7 +26,9 @@ import com.fersaiyan.cyanbridge.chat.ChatEngine
 import com.fersaiyan.cyanbridge.ui.accessibility.AccessibilityPrefs
 import com.fersaiyan.cyanbridge.ui.screens.AssistantScreen
 import com.fersaiyan.cyanbridge.ui.screens.HomeScreen
+import com.fersaiyan.cyanbridge.ui.screens.LoginScreen
 import com.fersaiyan.cyanbridge.ui.screens.MediaScreen
+import com.fersaiyan.cyanbridge.ui.screens.MembershipScreen
 import com.fersaiyan.cyanbridge.ui.screens.SettingsScreen
 import com.fersaiyan.cyanbridge.ui.screens.TranslateScreen
 
@@ -97,8 +99,9 @@ fun AppNavigation() {
             }
         }
     }
-    // Hide bottom bar on translate page
-    val showBottomBar = currentRoute != "translate"
+    // Hide bottom bar on sub-pages
+    val showBottomBar =
+            currentRoute != "translate" && currentRoute != "login" && currentRoute != "membership"
 
     Scaffold(
             bottomBar = {
@@ -148,8 +151,25 @@ fun AppNavigation() {
             composable(Screen.Home.route) { HomeScreen(navController = navController) }
             composable(Screen.Assistant.route) { AssistantScreen() }
             composable(Screen.Media.route) { MediaScreen() }
-            composable(Screen.Settings.route) { SettingsScreen() }
+            composable(Screen.Settings.route) {
+                SettingsScreen(
+                        onNavigateToLogin = { navController.navigate("login") },
+                        onNavigateToMembership = { navController.navigate("membership") },
+                )
+            }
             composable("translate") { TranslateScreen(onBack = { navController.popBackStack() }) }
+            composable("login") {
+                LoginScreen(
+                        onLoginSuccess = { navController.popBackStack() },
+                        onBack = { navController.popBackStack() },
+                )
+            }
+            composable("membership") {
+                MembershipScreen(
+                        onBack = { navController.popBackStack() },
+                        onLoginNeeded = { navController.navigate("login") },
+                )
+            }
         }
     }
 }
