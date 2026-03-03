@@ -18,18 +18,18 @@ import kotlin.properties.Delegates
  * @Author: Hzy
  * @CreateDate: 2021/6/25 11:50
  *
- * "Programs should be written for other people to read,
- * and only incidentally for machines to execute"
+ * "Programs should be written for other people to read, and only incidentally for machines to
+ * execute"
  */
 /**
  * 应用入口：
  * - 初始化 BLE
  * - 初始化对话引擎与全局 TTS 播放
  */
-class MyApplication : Application(){
+class MyApplication : Application() {
 
     var hardwareVersion: String = ""
-    var firmwareVersion:String =""
+    var firmwareVersion: String = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -40,13 +40,14 @@ class MyApplication : Application(){
         com.fersaiyan.cyanbridge.chat.ChatEngine.init(this)
         // Global auto-play for assistant replies (works even outside ChatActivity).
         com.fersaiyan.cyanbridge.chat.ChatPlaybackManager.start()
+        // Initialize GlassesRepository singleton for Compose screens
+        com.fersaiyan.cyanbridge.glasses.GlassesRepository.getInstance(this)
     }
     private fun initBle() {
         initReceiver()
         val intentFilter = BleAction.getIntentFilter()
         val myBleReceiver = MyBluetoothReceiver()
-        LocalBroadcastManager.getInstance(CONTEXT)
-            .registerReceiver(myBleReceiver, intentFilter)
+        LocalBroadcastManager.getInstance(CONTEXT).registerReceiver(myBleReceiver, intentFilter)
         BleBaseControl.getInstance(CONTEXT).setmContext(this)
     }
 
@@ -62,7 +63,6 @@ class MyApplication : Application(){
         } else {
             registerReceiver(deviceReceiver, deviceFilter)
         }
-
     }
 
     fun getDeviceIntentFilter(): IntentFilter? {
@@ -76,15 +76,13 @@ class MyApplication : Application(){
 
     fun getAppRootFile(context: Context): File {
         // /storage/emulated/0/Android/data/pack_name/files
-        return if(context.getExternalFilesDir("")!=null){
+        return if (context.getExternalFilesDir("") != null) {
             context.getExternalFilesDir("")!!
-        }else{
+        } else {
             val externalSaveDir = context.externalCacheDir
             externalSaveDir ?: context.cacheDir
         }
-
     }
-
 
     companion object {
         private var application: Application? = null
@@ -94,7 +92,9 @@ class MyApplication : Application(){
 
         fun getApplication(): Application {
             return application
-                ?: throw RuntimeException("Application not initialized. onCreate not yet called.")
+                    ?: throw RuntimeException(
+                            "Application not initialized. onCreate not yet called."
+                    )
         }
 
         fun getInstance(): MyApplication {
