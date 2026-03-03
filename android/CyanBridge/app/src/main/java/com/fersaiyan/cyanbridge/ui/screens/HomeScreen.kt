@@ -218,6 +218,11 @@ fun HomeScreen(glassesVm: GlassesViewModel = viewModel(), navController: NavCont
                         onClick = { navController?.navigate("translate") }
                 )
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Tutorial Card ──
+            TutorialCard()
         }
 
         // Snackbar host

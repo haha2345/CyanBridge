@@ -3,6 +3,7 @@ package com.fersaiyan.cyanbridge.glasses
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.util.Log
 import com.fersaiyan.cyanbridge.chat.ChatEngine
 import com.fersaiyan.cyanbridge.chat.ChatSource
@@ -16,7 +17,15 @@ import com.oudmon.ble.base.communication.bigData.resp.GlassesDeviceNotifyRsp
 import com.oudmon.ble.base.scan.BleScannerHelper
 import com.oudmon.ble.base.scan.ScanRecord
 import com.oudmon.ble.base.scan.ScanWrapperCallback
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -116,6 +125,10 @@ class GlassesRepository private constructor(private val context: Context) {
     private var aliyunAsr: AliyunAsrWakeSession? = null
     private var deviceNotifyRegistered = false
 
+    // ── Vision thumbnail capture signal ──
+    @Volatile private var visionPhotoSignal: CompletableDeferred<Unit>? = null
+    private val captureTimeoutMs = 30_000L
+
     /**
      * Register the DeviceNotify listener so we catch wake events (0x03) even from
      * ComposeMainActivity (the old listener was only in MainActivity).
@@ -146,9 +159,24 @@ class GlassesRepository private constructor(private val context: Context) {
                                                 TAG,
                                                 "  0x73 sub=0x${"%02x".format(subCmd)} val=$value"
                                         )
-                                        if (subCmd == 0x03 && value == 1) {
-                                            Log.i(TAG, "*** VOICE WAKE EVENT DETECTED ***")
-                                            onVoiceWakeTriggered()
+                                        when (subCmd) {
+                                            0x03 -> {
+                                                if (value == 1) {
+                                                    Log.i(TAG, "*** VOICE WAKE EVENT DETECTED ***")
+                                                    onVoiceWakeTriggered()
+                                                }
+                                            }
+                                            // Photo captured (0x01) or AI Photo (0x02)
+                                            0x01,
+                                            0x02 -> {
+                                                Log.i(
+                                                        TAG,
+                                                        "Photo/AI-Photo signal: sub=0x${"%02x".format(subCmd)}"
+                                                )
+                                                visionPhotoSignal?.let { signal ->
+                                                    if (!signal.isCompleted) signal.complete(Unit)
+                                                }
+                                            }
                                         }
                                     }
                                 } catch (e: Exception) {
@@ -396,6 +424,111 @@ class GlassesRepository private constructor(private val context: Context) {
         // Photo is instant — don't change glassesMode, just show toast
         _lastActionResult.value = "拍照 成功"
     }
+
+    /**
+     * 拍照+获取缩略图。从眼镜摄像头拍一张照片并通过 BLE 接收 JPEG 缩略图。 参照 MainActivity.startAiVisionMvp() 的已验证逻辑。
+     * @return 本地 JPEG 文件, 失败返回 null
+     */
+    suspend fun captureAndGetThumbnail(): File? =
+            withContext(Dispatchers.IO) {
+                if (!BleOperateManager.getInstance().isConnected) {
+                    Log.e(TAG, "captureAndGetThumbnail: BLE not connected")
+                    return@withContext null
+                }
+
+                val outDir = File(context.cacheDir, "ai_vision_mvp").apply { mkdirs() }
+                val outFile = File(outDir, "ai_${System.currentTimeMillis()}.jpg")
+                val buf = ByteArrayOutputStream()
+                val done = CompletableDeferred<Boolean>()
+                val photoSignal = CompletableDeferred<Unit>()
+                visionPhotoSignal = photoSignal
+                var hadData = false
+                var chunkCount = 0
+
+                try {
+                    // 触发 "智能图片识别 / 缩略图拍照" (SDK 文档命令)
+                    val thumbnailSize: Byte = 0x02 // 0..6
+                    val captureAck = CompletableDeferred<Int?>()
+                    LargeDataHandler.getInstance().glassesControl(
+                                    byteArrayOf(
+                                            0x02,
+                                            0x01,
+                                            0x06,
+                                            thumbnailSize,
+                                            thumbnailSize,
+                                            0x02
+                                    )
+                            ) { _, resp ->
+                        Log.i(
+                                TAG,
+                                "capture ack: dataType=${resp.dataType}, error=${resp.errorCode}"
+                        )
+                        if (!captureAck.isCompleted) captureAck.complete(resp.errorCode)
+                    }
+
+                    val captureErr = withTimeoutOrNull(1500L) { captureAck.await() }
+                    if (captureErr != null && captureErr != 0) {
+                        Log.i(TAG, "capture ack error=$captureErr (benign); continuing")
+                    }
+
+                    // 等待拍照信号
+                    val gotSignal = withTimeoutOrNull(12_000L) { photoSignal.await() } != null
+                    if (!gotSignal) {
+                        Log.w(TAG, "No photo signal; still attempting thumbnails")
+                    } else {
+                        delay(700)
+                    }
+
+                    // 接收 JPEG 分块
+                    LargeDataHandler.getInstance().getPictureThumbnails { _, isComplete, data ->
+                        if (done.isCompleted) return@getPictureThumbnails
+                        if (data != null && data.isNotEmpty()) {
+                            hadData = true
+                            chunkCount++
+                            try {
+                                buf.write(data)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Chunk write error: ${e.message}")
+                                done.complete(false)
+                                return@getPictureThumbnails
+                            }
+                        }
+                        if (isComplete) {
+                            Log.i(TAG, "thumbnail complete: chunks=$chunkCount bytes=${buf.size()}")
+                            done.complete(hadData)
+                        }
+                    }
+
+                    val result = withTimeoutOrNull(captureTimeoutMs) { done.await() }
+                    if (result != true) {
+                        Log.e(TAG, "Thumbnail capture failed: result=$result hadData=$hadData")
+                        return@withContext null
+                    }
+
+                    val bytes = buf.toByteArray()
+                    if (bytes.isEmpty() ||
+                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size) == null
+                    ) {
+                        Log.e(TAG, "Invalid image data: size=${bytes.size}")
+                        return@withContext null
+                    }
+
+                    FileOutputStream(outFile).use { it.write(bytes) }
+                    Log.i(
+                            TAG,
+                            "Thumbnail saved: ${outFile.absolutePath} (${outFile.length()} bytes)"
+                    )
+                    outFile
+                } catch (e: Exception) {
+                    Log.e(TAG, "captureAndGetThumbnail failed", e)
+                    null
+                } finally {
+                    visionPhotoSignal = null
+                    try {
+                        buf.close()
+                    } catch (_: Exception) {}
+                }
+            }
 
     fun startVideoRecording() {
         if (!BleOperateManager.getInstance().isConnected) return
