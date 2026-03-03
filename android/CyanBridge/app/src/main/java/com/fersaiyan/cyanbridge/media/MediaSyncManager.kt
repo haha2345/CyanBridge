@@ -269,29 +269,9 @@ class MediaSyncManager(private val context: Context) {
         wifiP2pManager.addCallback(callback)
         wifiP2pManager.startPeerDiscovery()
 
-        // Send BLE command to bring up glasses WiFi — also parses the P2P device name from response
+        // Send BLE command to bring up glasses WiFi
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x04)) { _, resp ->
             Log.i(TAG, "BLE WiFi command ack: dataType=${resp.dataType}, error=${resp.errorCode}")
-            // Try to extract glasses P2P name from the response loadData
-            try {
-                val loadData = resp.loadData
-                if (loadData != null && loadData.size > 10) {
-                    // Build name from ASCII bytes after offset 9
-                    val sb = StringBuilder()
-                    for (i in 9 until loadData.size) {
-                        val b = loadData[i].toInt() and 0xFF
-                        if (b == 0) break
-                        if (b in 0x20..0x7E) sb.append(b.toChar())
-                    }
-                    val name = sb.toString()
-                    if (name.length > 3) {
-                        glassesP2pName = name
-                        Log.i(TAG, "Glasses P2P name from BLE: $name")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to parse glasses P2P name: ${e.message}")
-            }
         }
 
         // Wait for P2P to connect and try to find device IP
@@ -325,7 +305,7 @@ class MediaSyncManager(private val context: Context) {
 
         // Cleanup notify listener
         try {
-            LargeDataHandler.getInstance().removeOutDeviceListener(notifyListener)
+            LargeDataHandler.getInstance().removeOutDeviceListener(2)
         } catch (_: Exception) {}
 
         if (deviceIp == null) {
