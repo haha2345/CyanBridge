@@ -276,43 +276,53 @@ class GlassesRepository private constructor(private val context: Context) {
         if (!BleOperateManager.getInstance().isConnected) return
         Log.i(TAG, "takePhoto")
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x01)) { _, rsp ->
-            handleMediaResponse(rsp, "拍照")
+            logMediaResponse(rsp, "拍照")
         }
+        // Photo is instant — don't change glassesMode, just show toast
+        _lastActionResult.value = "拍照 成功"
     }
 
     fun startVideoRecording() {
         if (!BleOperateManager.getInstance().isConnected) return
         Log.i(TAG, "startVideoRecording")
+        _glassesMode.value = GlassesMode.VIDEO_RECORDING
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x02)) { _, rsp ->
-            handleMediaResponse(rsp, "录像")
+            logMediaResponse(rsp, "开始录像")
         }
+        _lastActionResult.value = "开始录像"
     }
 
     fun stopVideoRecording() {
         if (!BleOperateManager.getInstance().isConnected) return
         Log.i(TAG, "stopVideoRecording")
+        _glassesMode.value = GlassesMode.IDLE
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x03)) { _, rsp ->
-            handleMediaResponse(rsp, "停止录像")
+            logMediaResponse(rsp, "停止录像")
         }
+        _lastActionResult.value = "停止录像"
     }
 
     fun startAudioRecording() {
         if (!BleOperateManager.getInstance().isConnected) return
         Log.i(TAG, "startAudioRecording")
+        _glassesMode.value = GlassesMode.AUDIO_RECORDING
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x08)) { _, rsp ->
-            handleMediaResponse(rsp, "录音")
+            logMediaResponse(rsp, "开始录音")
         }
+        _lastActionResult.value = "开始录音"
     }
 
     fun stopAudioRecording() {
         if (!BleOperateManager.getInstance().isConnected) return
         Log.i(TAG, "stopAudioRecording")
+        _glassesMode.value = GlassesMode.IDLE
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x0c)) { _, rsp ->
-            handleMediaResponse(rsp, "停止录音")
+            logMediaResponse(rsp, "停止录音")
         }
+        _lastActionResult.value = "停止录音"
     }
 
-    private fun handleMediaResponse(rsp: Any?, action: String) {
+    private fun logMediaResponse(rsp: Any?, action: String) {
         try {
             val clazz = rsp?.javaClass ?: return
             val dataType =
@@ -321,27 +331,12 @@ class GlassesRepository private constructor(private val context: Context) {
                     clazz.getDeclaredField("errorCode").apply { isAccessible = true }.getInt(rsp)
             val workTypeIng =
                     clazz.getDeclaredField("workTypeIng").apply { isAccessible = true }.getInt(rsp)
-
-            if (dataType == 1) {
-                _glassesMode.value =
-                        when (workTypeIng) {
-                            1, 6 -> GlassesMode.CAMERA
-                            2 -> GlassesMode.VIDEO_RECORDING
-                            4 -> GlassesMode.TRANSFER
-                            5 -> GlassesMode.OTA
-                            7 -> GlassesMode.AI_CONVERSATION
-                            8 -> GlassesMode.AUDIO_RECORDING
-                            else -> GlassesMode.IDLE
-                        }
-                _lastActionResult.value = "$action 成功"
-                Log.i(TAG, "$action success, mode=$workTypeIng (errorCode=$errorCode)")
-            } else {
-                _lastActionResult.value = "$action 失败"
-                Log.e(TAG, "$action failed: dataType=$dataType")
-            }
+            Log.i(
+                    TAG,
+                    "$action response: dataType=$dataType, errorCode=$errorCode, workTypeIng=$workTypeIng"
+            )
         } catch (e: Exception) {
-            _lastActionResult.value = "$action 异常"
-            Log.e(TAG, "$action exception", e)
+            Log.e(TAG, "$action response parse error", e)
         }
     }
 
