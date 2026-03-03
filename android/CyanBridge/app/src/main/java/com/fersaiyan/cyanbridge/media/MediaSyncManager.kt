@@ -49,15 +49,23 @@ class MediaSyncManager(private val context: Context) {
 
     sealed class SyncState {
         data object Idle : SyncState()
-        data object Connecting : SyncState()
+        data object Querying : SyncState() // BLE count query in progress
+        data class Counted(val count: MediaCount) :
+                SyncState() // Counts ready, waiting for download
+        data object Connecting : SyncState() // WiFi P2P connecting
         data class Syncing(val current: Int, val total: Int, val fileName: String) : SyncState()
         data class Done(val success: Int, val failed: Int) : SyncState()
         data class Error(val message: String) : SyncState()
     }
 
+    data class MediaCount(val images: Int, val videos: Int, val records: Int) {
+        val total
+            get() = images + videos + records
+    }
+
     data class MediaFileItem(
             val name: String,
-            val type: MediaType, // PHOTO, VIDEO, AUDIO
+            val type: MediaType,
             val localUri: String?,
             val timestamp: Long,
     )
@@ -74,6 +82,9 @@ class MediaSyncManager(private val context: Context) {
     private val _downloadedFiles = MutableStateFlow<List<MediaFileItem>>(emptyList())
     val downloadedFiles: StateFlow<List<MediaFileItem>> = _downloadedFiles.asStateFlow()
 
+    private val _mediaCount = MutableStateFlow<MediaCount?>(null)
+    val mediaCount: StateFlow<MediaCount?> = _mediaCount.asStateFlow()
+
     private var syncJob: Job? = null
     private var p2pNetwork: Network? = null
     private var boundNetwork: Network? = null
@@ -83,6 +94,38 @@ class MediaSyncManager(private val context: Context) {
 
     // ── Public API ──
 
+    /**
+     * Step 1: Query media count from glasses via BLE (instant, no WiFi needed). The official app
+     * uses glassesControl(0x02, 0x04) for this.
+     */
+    fun queryMediaCount() {
+        if (!BleOperateManager.getInstance().isConnected) {
+            _syncState.value = SyncState.Error("请先连接眼镜")
+            return
+        }
+        _syncState.value = SyncState.Querying
+        LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x04)) { _, resp ->
+            try {
+                if (resp.dataType == 4) {
+                    val count = MediaCount(resp.imageCount, resp.videoCount, resp.recordCount)
+                    _mediaCount.value = count
+                    _syncState.value =
+                            if (count.total > 0) SyncState.Counted(count) else SyncState.Done(0, 0)
+                    Log.i(
+                            TAG,
+                            "Media count: images=${count.images}, videos=${count.videos}, records=${count.records}"
+                    )
+                } else {
+                    _syncState.value = SyncState.Error("查询失败: dataType=${resp.dataType}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "queryMediaCount error", e)
+                _syncState.value = SyncState.Error("查询失败: ${e.message}")
+            }
+        }
+    }
+
+    /** Step 2: Download all media files via WiFi P2P (called after queryMediaCount succeeds). */
     fun startSync() {
         if (syncJob?.isActive == true) return
         if (!BleOperateManager.getInstance().isConnected) {
