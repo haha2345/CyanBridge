@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -39,100 +40,132 @@ fun HomeScreen(glassesVm: GlassesViewModel = viewModel()) {
     val batteryLevel by glassesVm.batteryLevel.collectAsState()
     val isCharging by glassesVm.isCharging.collectAsState()
     val showScanDialog by glassesVm.showScanDialog.collectAsState()
+    val glassesMode by glassesVm.glassesMode.collectAsState()
+    val actionResult by glassesVm.lastActionResult.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show snackbar for action results
+    LaunchedEffect(actionResult) {
+        actionResult?.let {
+            snackbarHostState.showSnackbar(it)
+            glassesVm.clearActionResult()
+        }
+    }
 
     // Refresh on composition
     LaunchedEffect(Unit) { glassesVm.refreshState() }
 
-    Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // ── Title ──
-        Text(
-                text = "CyanBridge",
-                style =
-                        MaterialTheme.typography.headlineLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.5).sp
-                        ),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.semantics { contentDescription = "CyanBridge 盲人智能眼镜助手" }
-        )
+    val isVideoRecording = glassesMode == GlassesRepository.GlassesMode.VIDEO_RECORDING
+    val isAudioRecording = glassesMode == GlassesRepository.GlassesMode.AUDIO_RECORDING
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-                text = "盲人智能眼镜助手",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // ── Connection Status Card ──
-        GlassesConnectionCard(
-                isConnected = isConnected,
-                isConnecting = isConnecting,
-                deviceName = deviceName,
-                batteryLevel = batteryLevel,
-                isCharging = isCharging ?: false,
-                hasSavedDevice = glassesVm.hasSavedDevice,
-                onConnectClick = { glassesVm.onConnectTapped() },
-                onScanClick = { glassesVm.onScanRequested() },
-                onForgetClick = { glassesVm.onForgetDevice() }
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ── Quick Actions Grid ──
-        Text(
-                text = "快捷操作",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            QuickActionCard(
-                    modifier = Modifier.weight(1f),
-                    title = "拍照",
-                    description = "控制眼镜拍照",
-                    enabled = isConnected,
-                    onClick = { /* TODO */}
+            // ── Title ──
+            Text(
+                    text = "CyanBridge",
+                    style =
+                            MaterialTheme.typography.headlineLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = (-0.5).sp
+                            ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.semantics { contentDescription = "CyanBridge 盲人智能眼镜助手" }
             )
-            QuickActionCard(
-                    modifier = Modifier.weight(1f),
-                    title = "录像",
-                    description = "控制眼镜录像",
-                    enabled = isConnected,
-                    onClick = { /* TODO */}
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                    text = "盲人智能眼镜助手",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // ── Connection Status Card ──
+            GlassesConnectionCard(
+                    isConnected = isConnected,
+                    isConnecting = isConnecting,
+                    deviceName = deviceName,
+                    batteryLevel = batteryLevel,
+                    isCharging = isCharging ?: false,
+                    hasSavedDevice = glassesVm.hasSavedDevice,
+                    onConnectClick = { glassesVm.onConnectTapped() },
+                    onScanClick = { glassesVm.onScanRequested() },
+                    onForgetClick = { glassesVm.onForgetDevice() }
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Quick Actions Grid ──
+            Text(
+                    text = "快捷操作",
+                    style =
+                            MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.SemiBold
+                            ),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                QuickActionCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Filled.CameraAlt,
+                        title = "拍照",
+                        description = "控制眼镜拍照",
+                        enabled = isConnected,
+                        onClick = { glassesVm.takePhoto() }
+                )
+                QuickActionCard(
+                        modifier = Modifier.weight(1f),
+                        icon = if (isVideoRecording) Icons.Filled.Stop else Icons.Filled.Videocam,
+                        title = if (isVideoRecording) "停止录像" else "录像",
+                        description = if (isVideoRecording) "点击停止" else "控制眼镜录像",
+                        enabled = isConnected,
+                        isActive = isVideoRecording,
+                        onClick = { glassesVm.toggleVideoRecording() }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                QuickActionCard(
+                        modifier = Modifier.weight(1f),
+                        icon = if (isAudioRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                        title = if (isAudioRecording) "停止录音" else "录音",
+                        description = if (isAudioRecording) "点击停止" else "控制眼镜录音",
+                        enabled = isConnected,
+                        isActive = isAudioRecording,
+                        onClick = { glassesVm.toggleAudioRecording() }
+                )
+                QuickActionCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Filled.Translate,
+                        title = "翻译",
+                        description = "同声传译功能",
+                        enabled = isConnected,
+                        onClick = { /* TODO */}
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            QuickActionCard(
-                    modifier = Modifier.weight(1f),
-                    title = "录音",
-                    description = "控制眼镜录音",
-                    enabled = isConnected,
-                    onClick = { /* TODO */}
-            )
-            QuickActionCard(
-                    modifier = Modifier.weight(1f),
-                    title = "翻译",
-                    description = "同声传译功能",
-                    enabled = isConnected,
-                    onClick = { /* TODO */}
-            )
-        }
+        // Snackbar host
+        SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+        )
     }
 
     // ── BLE Scan Dialog ──
@@ -561,9 +594,11 @@ private fun DeviceListItem(device: GlassesRepository.ScannedDevice, onClick: () 
 @Composable
 private fun QuickActionCard(
         modifier: Modifier = Modifier,
+        icon: ImageVector? = null,
         title: String,
         description: String,
         enabled: Boolean = true,
+        isActive: Boolean = false,
         onClick: () -> Unit
 ) {
     Card(
@@ -574,32 +609,57 @@ private fun QuickActionCard(
             enabled = enabled,
             colors =
                     CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            containerColor =
+                                    when {
+                                        isActive -> MaterialTheme.colorScheme.errorContainer
+                                        else -> MaterialTheme.colorScheme.surfaceVariant
+                                    },
                             disabledContainerColor =
                                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     )
     ) {
-        Column(
+        Row(
                 modifier = Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.Center
+                verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                    text = title,
-                    style =
-                            MaterialTheme.typography.titleSmall.copy(
-                                    fontWeight = FontWeight.SemiBold
-                            ),
-                    color =
-                            if (enabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-            )
-            Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color =
-                            if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-            )
+            if (icon != null) {
+                Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint =
+                                when {
+                                    !enabled ->
+                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    isActive -> MaterialTheme.colorScheme.error
+                                    else -> CyanPrimary
+                                }
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+            Column {
+                Text(
+                        text = title,
+                        style =
+                                MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.SemiBold
+                                ),
+                        color =
+                                when {
+                                    !enabled ->
+                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    isActive -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                )
+                Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color =
+                                if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                )
+            }
         }
     }
 }

@@ -92,6 +92,31 @@ class GlassesViewModel(application: Application) : AndroidViewModel(application)
         repo.clearSavedDevice()
     }
 
+    // ── Media Control ─────────────────────────────────────────
+
+    val glassesMode: StateFlow<GlassesRepository.GlassesMode> = repo.glassesMode
+    val lastActionResult: StateFlow<String?> = repo.lastActionResult
+
+    fun takePhoto() = repo.takePhoto()
+
+    fun toggleVideoRecording() {
+        if (repo.glassesMode.value == GlassesRepository.GlassesMode.VIDEO_RECORDING) {
+            repo.stopVideoRecording()
+        } else {
+            repo.startVideoRecording()
+        }
+    }
+
+    fun toggleAudioRecording() {
+        if (repo.glassesMode.value == GlassesRepository.GlassesMode.AUDIO_RECORDING) {
+            repo.stopAudioRecording()
+        } else {
+            repo.startAudioRecording()
+        }
+    }
+
+    fun clearActionResult() = repo.clearActionResult()
+
     fun refreshState() {
         repo.refreshConnectionState()
     }

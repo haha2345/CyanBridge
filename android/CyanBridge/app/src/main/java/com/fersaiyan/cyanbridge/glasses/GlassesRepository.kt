@@ -250,6 +250,101 @@ class GlassesRepository private constructor(private val context: Context) {
         }
     }
 
+    // ── Media Control ─────────────────────────────────────────
+
+    enum class GlassesMode {
+        IDLE,
+        CAMERA,
+        VIDEO_RECORDING,
+        AUDIO_RECORDING,
+        TRANSFER,
+        OTA,
+        AI_CONVERSATION
+    }
+
+    private val _glassesMode = MutableStateFlow(GlassesMode.IDLE)
+    val glassesMode: StateFlow<GlassesMode> = _glassesMode.asStateFlow()
+
+    private val _lastActionResult = MutableStateFlow<String?>(null)
+    val lastActionResult: StateFlow<String?> = _lastActionResult.asStateFlow()
+
+    fun clearActionResult() {
+        _lastActionResult.value = null
+    }
+
+    fun takePhoto() {
+        if (!BleOperateManager.getInstance().isConnected) return
+        Log.i(TAG, "takePhoto")
+        LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x01)) { _, rsp ->
+            handleMediaResponse(rsp, "拍照")
+        }
+    }
+
+    fun startVideoRecording() {
+        if (!BleOperateManager.getInstance().isConnected) return
+        Log.i(TAG, "startVideoRecording")
+        LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x02)) { _, rsp ->
+            handleMediaResponse(rsp, "录像")
+        }
+    }
+
+    fun stopVideoRecording() {
+        if (!BleOperateManager.getInstance().isConnected) return
+        Log.i(TAG, "stopVideoRecording")
+        LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x03)) { _, rsp ->
+            handleMediaResponse(rsp, "停止录像")
+        }
+    }
+
+    fun startAudioRecording() {
+        if (!BleOperateManager.getInstance().isConnected) return
+        Log.i(TAG, "startAudioRecording")
+        LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x08)) { _, rsp ->
+            handleMediaResponse(rsp, "录音")
+        }
+    }
+
+    fun stopAudioRecording() {
+        if (!BleOperateManager.getInstance().isConnected) return
+        Log.i(TAG, "stopAudioRecording")
+        LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x0c)) { _, rsp ->
+            handleMediaResponse(rsp, "停止录音")
+        }
+    }
+
+    private fun handleMediaResponse(rsp: Any?, action: String) {
+        try {
+            val clazz = rsp?.javaClass ?: return
+            val dataType =
+                    clazz.getDeclaredField("dataType").apply { isAccessible = true }.getInt(rsp)
+            val errorCode =
+                    clazz.getDeclaredField("errorCode").apply { isAccessible = true }.getInt(rsp)
+            val workTypeIng =
+                    clazz.getDeclaredField("workTypeIng").apply { isAccessible = true }.getInt(rsp)
+
+            if (dataType == 1 && errorCode == 0) {
+                _glassesMode.value =
+                        when (workTypeIng) {
+                            1, 6 -> GlassesMode.CAMERA
+                            2 -> GlassesMode.VIDEO_RECORDING
+                            4 -> GlassesMode.TRANSFER
+                            5 -> GlassesMode.OTA
+                            7 -> GlassesMode.AI_CONVERSATION
+                            8 -> GlassesMode.AUDIO_RECORDING
+                            else -> GlassesMode.IDLE
+                        }
+                _lastActionResult.value = "$action 成功"
+                Log.i(TAG, "$action success, mode=$workTypeIng")
+            } else {
+                _lastActionResult.value = "$action 失败 (error=$errorCode)"
+                Log.e(TAG, "$action failed: dataType=$dataType, errorCode=$errorCode")
+            }
+        } catch (e: Exception) {
+            _lastActionResult.value = "$action 异常"
+            Log.e(TAG, "$action exception", e)
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────
 
     fun isConnected(): Boolean = BleOperateManager.getInstance().isConnected
