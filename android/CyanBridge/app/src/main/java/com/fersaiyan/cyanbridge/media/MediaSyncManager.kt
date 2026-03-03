@@ -174,6 +174,22 @@ class MediaSyncManager(private val context: Context) {
 
     private suspend fun startP2pAndDownload() {
         val wifiP2pManager = WifiP2pManagerSingleton.getInstance(context)
+
+        // ── Critical: Clean up stale P2P state before connecting ──
+        // Reset glasses P2P (send [0x02, 0x01, 0x0F] to clear their P2P state)
+        Log.i(TAG, "Resetting glasses P2P state...")
+        wifiP2pManager.resetDeviceP2p()
+        delay(1000)
+
+        // Cancel any existing Android P2P connections and groups
+        wifiP2pManager.cancelP2pConnection()
+        delay(500)
+        val groupRemoved = CompletableDeferred<Boolean>()
+        wifiP2pManager.removeGroup { groupRemoved.complete(it) }
+        withTimeoutOrNull(2000) { groupRemoved.await() }
+        delay(500)
+
+        // Reset internal retry counters and re-register
         wifiP2pManager.resetFailCount()
         wifiP2pManager.registerReceiver()
 
