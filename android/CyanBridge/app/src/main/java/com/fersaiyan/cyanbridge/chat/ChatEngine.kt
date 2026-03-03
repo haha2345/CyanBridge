@@ -1,6 +1,8 @@
 package com.fersaiyan.cyanbridge.chat
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import com.fersaiyan.cyanbridge.ai.QwenChatClient
@@ -27,6 +29,7 @@ object ChatEngine {
     private lateinit var qwen: QwenChatClient
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 初始化对话引擎（全局单例）。 */
     fun init(context: Context) {
@@ -70,12 +73,17 @@ object ChatEngine {
 
     /** 用 Android TTS 朗读任意文本（用于消息重播）。 */
     fun speakText(text: String) {
+        Log.i(TAG, "speakText called, ttsReady=$ttsReady, text=${text.take(60)}")
         if (!ttsReady) {
-            Log.e(TAG, "TTS not ready")
+            Log.e(TAG, "TTS not ready, cannot speak")
             return
         }
-        tts?.stop()
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
+        mainHandler.post {
+            tts?.stop()
+            val result =
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
+            Log.i(TAG, "TTS speak result=$result")
+        }
     }
 
     /** 停止 TTS 播放。 */
