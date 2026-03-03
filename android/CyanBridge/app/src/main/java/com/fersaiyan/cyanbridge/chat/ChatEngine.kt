@@ -251,6 +251,17 @@ object ChatEngine {
         Log.i(TAG_FLOW, "Vision: reply len=${reply.length}")
         val audioPath = ttsService.synthesizeToFile(reply, messageId)
 
+        // Move image to persistent directory so chat can display it
+        val visionDir = java.io.File(appContext.filesDir, "vision_images")
+        if (!visionDir.exists()) visionDir.mkdirs()
+        val persistentFile = java.io.File(visionDir, "${messageId}.jpg")
+        try {
+            imageFile.copyTo(persistentFile, overwrite = true)
+            imageFile.delete()
+        } catch (_: Exception) {}
+        val savedImagePath =
+                if (persistentFile.exists()) persistentFile.absolutePath else imageFile.absolutePath
+
         val assistantMessage =
                 ChatMessageEntity(
                         id = messageId,
@@ -260,13 +271,9 @@ object ChatEngine {
                         status = ChatStatus.OK,
                         source = ChatSource.SYSTEM,
                         audioPath = audioPath,
+                        imagePath = savedImagePath,
                 )
         repository.insert(assistantMessage)
-
-        // Clean up temp image
-        try {
-            imageFile.delete()
-        } catch (_: Exception) {}
     }
 
     private const val TAG = "ChatEngine"

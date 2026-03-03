@@ -37,205 +37,233 @@ import com.fersaiyan.cyanbridge.ui.theme.CyanPrimary
 @Composable
 fun HomeScreen(glassesVm: GlassesViewModel = viewModel(), navController: NavController? = null) {
 
-    val isConnected by glassesVm.isConnected.collectAsState()
-    val isConnecting by glassesVm.isConnecting.collectAsState()
-    val deviceName by glassesVm.deviceName.collectAsState()
-    val batteryLevel by glassesVm.batteryLevel.collectAsState()
-    val isCharging by glassesVm.isCharging.collectAsState()
-    val showScanDialog by glassesVm.showScanDialog.collectAsState()
-    val glassesMode by glassesVm.glassesMode.collectAsState()
-    val actionResult by glassesVm.lastActionResult.collectAsState()
+        val isConnected by glassesVm.isConnected.collectAsState()
+        val isConnecting by glassesVm.isConnecting.collectAsState()
+        val deviceName by glassesVm.deviceName.collectAsState()
+        val batteryLevel by glassesVm.batteryLevel.collectAsState()
+        val isCharging by glassesVm.isCharging.collectAsState()
+        val showScanDialog by glassesVm.showScanDialog.collectAsState()
+        val glassesMode by glassesVm.glassesMode.collectAsState()
+        val actionResult by glassesVm.lastActionResult.collectAsState()
 
-    val snackbarHostState = remember { SnackbarHostState() }
+        val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(actionResult) {
-        actionResult?.let {
-            snackbarHostState.showSnackbar(it)
-            glassesVm.clearActionResult()
+        LaunchedEffect(actionResult) {
+                actionResult?.let {
+                        snackbarHostState.showSnackbar(it)
+                        glassesVm.clearActionResult()
+                }
         }
-    }
-    LaunchedEffect(Unit) { glassesVm.refreshState() }
+        LaunchedEffect(Unit) { glassesVm.refreshState() }
 
-    val isVideoRecording = glassesMode == GlassesRepository.GlassesMode.VIDEO_RECORDING
-    val isAudioRecording = glassesMode == GlassesRepository.GlassesMode.AUDIO_RECORDING
-    val blind = isBlindMode()
+        val isVideoRecording = glassesMode == GlassesRepository.GlassesMode.VIDEO_RECORDING
+        val isAudioRecording = glassesMode == GlassesRepository.GlassesMode.AUDIO_RECORDING
+        val blind = isBlindMode()
+        var showTutorialDialog by remember { mutableStateOf(false) }
 
-    // ── Blind mode: simplified single-column layout ──
-    if (blind) {
-        Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                    text = "CyanBridge",
-                    style =
-                            MaterialTheme.typography.headlineLarge.copy(
-                                    fontWeight = FontWeight.Bold
-                            ),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.semantics { contentDescription = "CyanBridge 盲人智能眼镜助手" }
-            )
-            // Connection status
-            val connStatus =
-                    if (isConnected) "已连接：${deviceName ?: "眼镜"}，电量${batteryLevel ?: "未知"}%"
-                    else if (isConnecting) "正在连接..." else "未连接"
-            LargeTouchButton(
-                    icon = Icons.Filled.Bluetooth,
-                    title = if (isConnected) "眼镜已连接" else "连接眼镜",
-                    description = connStatus,
-                    onClick = { if (!isConnected) glassesVm.onConnectTapped() },
-            )
-            LargeTouchButton(
-                    icon = Icons.Filled.CameraAlt,
-                    title = "拍照",
-                    description = "控制眼镜拍照",
-                    onClick = { if (isConnected) glassesVm.takePhoto() },
-            )
-            LargeTouchButton(
-                    icon = if (isVideoRecording) Icons.Filled.Stop else Icons.Filled.Videocam,
-                    title = if (isVideoRecording) "停止录像" else "录像",
-                    description = if (isVideoRecording) "点击停止" else "控制眼镜录像",
-                    onClick = { if (isConnected) glassesVm.toggleVideoRecording() },
-            )
-            LargeTouchButton(
-                    icon = if (isAudioRecording) Icons.Filled.Stop else Icons.Filled.Mic,
-                    title = if (isAudioRecording) "停止录音" else "录音",
-                    description = if (isAudioRecording) "点击停止" else "控制眼镜录音",
-                    onClick = { if (isConnected) glassesVm.toggleAudioRecording() },
-            )
-            LargeTouchButton(
-                    icon = Icons.Filled.Translate,
-                    title = "翻译",
-                    description = "同声传译功能",
-                    onClick = { navController?.navigate("translate") },
-            )
+        // ── Blind mode: simplified single-column layout ──
+        if (blind) {
+                Column(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                        Text(
+                                text = "CyanBridge",
+                                style =
+                                        MaterialTheme.typography.headlineLarge.copy(
+                                                fontWeight = FontWeight.Bold
+                                        ),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier =
+                                        Modifier.semantics {
+                                                contentDescription = "CyanBridge 盲人智能眼镜助手"
+                                        }
+                        )
+                        // Connection status
+                        val connStatus =
+                                if (isConnected)
+                                        "已连接：${deviceName ?: "眼镜"}，电量${batteryLevel ?: "未知"}%"
+                                else if (isConnecting) "正在连接..." else "未连接"
+                        LargeTouchButton(
+                                icon = Icons.Filled.Bluetooth,
+                                title = if (isConnected) "眼镜已连接" else "连接眼镜",
+                                description = connStatus,
+                                onClick = { if (!isConnected) glassesVm.onConnectTapped() },
+                        )
+                        LargeTouchButton(
+                                icon = Icons.Filled.CameraAlt,
+                                title = "拍照",
+                                description = "控制眼镜拍照",
+                                onClick = { if (isConnected) glassesVm.takePhoto() },
+                        )
+                        LargeTouchButton(
+                                icon =
+                                        if (isVideoRecording) Icons.Filled.Stop
+                                        else Icons.Filled.Videocam,
+                                title = if (isVideoRecording) "停止录像" else "录像",
+                                description = if (isVideoRecording) "点击停止" else "控制眼镜录像",
+                                onClick = { if (isConnected) glassesVm.toggleVideoRecording() },
+                        )
+                        LargeTouchButton(
+                                icon =
+                                        if (isAudioRecording) Icons.Filled.Stop
+                                        else Icons.Filled.Mic,
+                                title = if (isAudioRecording) "停止录音" else "录音",
+                                description = if (isAudioRecording) "点击停止" else "控制眼镜录音",
+                                onClick = { if (isConnected) glassesVm.toggleAudioRecording() },
+                        )
+                        LargeTouchButton(
+                                icon = Icons.Filled.School,
+                                title = "使用教程",
+                                description = "如何使用智能眼镜",
+                                onClick = { showTutorialDialog = true },
+                        )
+                }
+
+                if (showScanDialog) {
+                        BleScanDialog(
+                                viewModel = glassesVm,
+                                onDismiss = { glassesVm.onScanDialogDismissed() }
+                        )
+                }
+                return
         }
 
+        // ── Normal mode ──
+        Box(modifier = Modifier.fillMaxSize()) {
+                Column(
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                        // ── Title ──
+                        Text(
+                                text = "CyanBridge",
+                                style =
+                                        MaterialTheme.typography.headlineLarge.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                letterSpacing = (-0.5).sp
+                                        ),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier =
+                                        Modifier.semantics {
+                                                contentDescription = "CyanBridge 盲人智能眼镜助手"
+                                        }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                                text = "盲人智能眼镜助手",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // ── Connection Status Card ──
+                        GlassesConnectionCard(
+                                isConnected = isConnected,
+                                isConnecting = isConnecting,
+                                deviceName = deviceName,
+                                batteryLevel = batteryLevel,
+                                isCharging = isCharging ?: false,
+                                hasSavedDevice = glassesVm.hasSavedDevice,
+                                onConnectClick = { glassesVm.onConnectTapped() },
+                                onScanClick = { glassesVm.onScanRequested() },
+                                onForgetClick = { glassesVm.onForgetDevice() }
+                        )
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // ── Quick Actions Grid ──
+                        Text(
+                                text = "快捷操作",
+                                style =
+                                        MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.SemiBold
+                                        ),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                                QuickActionCard(
+                                        modifier = Modifier.weight(1f),
+                                        icon = Icons.Filled.CameraAlt,
+                                        title = "拍照",
+                                        description = "控制眼镜拍照",
+                                        enabled = isConnected,
+                                        onClick = { glassesVm.takePhoto() }
+                                )
+                                QuickActionCard(
+                                        modifier = Modifier.weight(1f),
+                                        icon =
+                                                if (isVideoRecording) Icons.Filled.Stop
+                                                else Icons.Filled.Videocam,
+                                        title = if (isVideoRecording) "停止录像" else "录像",
+                                        description = if (isVideoRecording) "点击停止" else "控制眼镜录像",
+                                        enabled = isConnected,
+                                        isActive = isVideoRecording,
+                                        onClick = { glassesVm.toggleVideoRecording() }
+                                )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                                QuickActionCard(
+                                        modifier = Modifier.weight(1f),
+                                        icon =
+                                                if (isAudioRecording) Icons.Filled.Stop
+                                                else Icons.Filled.Mic,
+                                        title = if (isAudioRecording) "停止录音" else "录音",
+                                        description = if (isAudioRecording) "点击停止" else "控制眼镜录音",
+                                        enabled = isConnected,
+                                        isActive = isAudioRecording,
+                                        onClick = { glassesVm.toggleAudioRecording() }
+                                )
+                                QuickActionCard(
+                                        modifier = Modifier.weight(1f),
+                                        icon = Icons.Filled.School,
+                                        title = "使用教程",
+                                        description = "如何使用智能眼镜",
+                                        enabled = true,
+                                        onClick = { showTutorialDialog = true }
+                                )
+                        }
+                }
+
+                // Snackbar host
+                SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                )
+        }
+
+        // ── BLE Scan Dialog ──
         if (showScanDialog) {
-            BleScanDialog(viewModel = glassesVm, onDismiss = { glassesVm.onScanDialogDismissed() })
-        }
-        return
-    }
-
-    // ── Normal mode ──
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // ── Title ──
-            Text(
-                    text = "CyanBridge",
-                    style =
-                            MaterialTheme.typography.headlineLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = (-0.5).sp
-                            ),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.semantics { contentDescription = "CyanBridge 盲人智能眼镜助手" }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                    text = "盲人智能眼镜助手",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // ── Connection Status Card ──
-            GlassesConnectionCard(
-                    isConnected = isConnected,
-                    isConnecting = isConnecting,
-                    deviceName = deviceName,
-                    batteryLevel = batteryLevel,
-                    isCharging = isCharging ?: false,
-                    hasSavedDevice = glassesVm.hasSavedDevice,
-                    onConnectClick = { glassesVm.onConnectTapped() },
-                    onScanClick = { glassesVm.onScanRequested() },
-                    onForgetClick = { glassesVm.onForgetDevice() }
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // ── Quick Actions Grid ──
-            Text(
-                    text = "快捷操作",
-                    style =
-                            MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.SemiBold
-                            ),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                QuickActionCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Filled.CameraAlt,
-                        title = "拍照",
-                        description = "控制眼镜拍照",
-                        enabled = isConnected,
-                        onClick = { glassesVm.takePhoto() }
+                BleScanDialog(
+                        viewModel = glassesVm,
+                        onDismiss = { glassesVm.onScanDialogDismissed() }
                 )
-                QuickActionCard(
-                        modifier = Modifier.weight(1f),
-                        icon = if (isVideoRecording) Icons.Filled.Stop else Icons.Filled.Videocam,
-                        title = if (isVideoRecording) "停止录像" else "录像",
-                        description = if (isVideoRecording) "点击停止" else "控制眼镜录像",
-                        enabled = isConnected,
-                        isActive = isVideoRecording,
-                        onClick = { glassesVm.toggleVideoRecording() }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                QuickActionCard(
-                        modifier = Modifier.weight(1f),
-                        icon = if (isAudioRecording) Icons.Filled.Stop else Icons.Filled.Mic,
-                        title = if (isAudioRecording) "停止录音" else "录音",
-                        description = if (isAudioRecording) "点击停止" else "控制眼镜录音",
-                        enabled = isConnected,
-                        isActive = isAudioRecording,
-                        onClick = { glassesVm.toggleAudioRecording() }
-                )
-                QuickActionCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Filled.Translate,
-                        title = "翻译",
-                        description = "同声传译功能",
-                        enabled = true,
-                        onClick = { navController?.navigate("translate") }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // ── Tutorial Card ──
-            TutorialCard()
         }
 
-        // Snackbar host
-        SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
-        )
-    }
-
-    // ── BLE Scan Dialog ──
-    if (showScanDialog) {
-        BleScanDialog(viewModel = glassesVm, onDismiss = { glassesVm.onScanDialogDismissed() })
-    }
+        // ── Tutorial Dialog ──
+        if (showTutorialDialog) {
+                Dialog(onDismissRequest = { showTutorialDialog = false }) {
+                        TutorialCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                initialExpanded = true,
+                                onDismiss = { showTutorialDialog = false }
+                        )
+                }
+        }
 }
 
 @Composable
@@ -250,409 +278,444 @@ private fun GlassesConnectionCard(
         onScanClick: () -> Unit,
         onForgetClick: () -> Unit
 ) {
-    // Pulsing animation for connecting state
-    val infiniteTransition = rememberInfiniteTransition(label = "connecting")
-    val pulseAlpha by
-            infiniteTransition.animateFloat(
-                    initialValue = 0.3f,
-                    targetValue = 1f,
-                    animationSpec =
-                            infiniteRepeatable(
-                                    animation = tween(800, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Reverse
-                            ),
-                    label = "pulse"
-            )
-
-    Card(
-            modifier =
-                    Modifier.fillMaxWidth().semantics {
-                        contentDescription =
-                                when {
-                                    isConnecting -> "正在连接眼镜，请稍候"
-                                    isConnected ->
-                                            "眼镜已连接，${deviceName ?: ""}，电量${batteryLevel ?: "未知"}%"
-                                    else -> "眼镜未连接，点击连接"
-                                }
-                    },
-            shape = RoundedCornerShape(20.dp),
-            colors =
-                    CardDefaults.cardColors(
-                            containerColor =
-                                    when {
-                                        isConnecting ->
-                                                MaterialTheme.colorScheme.secondaryContainer.copy(
-                                                        alpha = 0.3f
-                                                )
-                                        isConnected ->
-                                                MaterialTheme.colorScheme.primaryContainer.copy(
-                                                        alpha = 0.3f
-                                                )
-                                        else -> MaterialTheme.colorScheme.surfaceVariant
-                                    }
-                    )
-    ) {
-        Column(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Status icon
-            Box(
-                    modifier =
-                            Modifier.size(80.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                            Brush.radialGradient(
-                                                    colors =
-                                                            when {
-                                                                isConnecting ->
-                                                                        listOf(
-                                                                                CyanPrimary.copy(
-                                                                                        alpha =
-                                                                                                0.2f *
-                                                                                                        pulseAlpha
-                                                                                ),
-                                                                                CyanDark.copy(
-                                                                                        alpha =
-                                                                                                0.05f *
-                                                                                                        pulseAlpha
-                                                                                )
-                                                                        )
-                                                                isConnected ->
-                                                                        listOf(
-                                                                                CyanPrimary.copy(
-                                                                                        alpha = 0.3f
-                                                                                ),
-                                                                                CyanDark.copy(
-                                                                                        alpha = 0.1f
-                                                                                )
-                                                                        )
-                                                                else ->
-                                                                        listOf(
-                                                                                MaterialTheme
-                                                                                        .colorScheme
-                                                                                        .error.copy(
-                                                                                        alpha = 0.2f
-                                                                                ),
-                                                                                MaterialTheme
-                                                                                        .colorScheme
-                                                                                        .error.copy(
-                                                                                        alpha =
-                                                                                                0.05f
-                                                                                )
-                                                                        )
-                                                            }
-                                            )
-                                    ),
-                    contentAlignment = Alignment.Center
-            ) {
-                if (isConnecting) {
-                    // Pulsing Bluetooth icon + CircularProgressIndicator
-                    CircularProgressIndicator(
-                            modifier = Modifier.size(60.dp),
-                            strokeWidth = 3.dp,
-                            color = CyanPrimary.copy(alpha = pulseAlpha)
-                    )
-                    Icon(
-                            imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp),
-                            tint = CyanPrimary.copy(alpha = pulseAlpha)
-                    )
-                } else {
-                    Icon(
-                            imageVector =
-                                    if (isConnected) Icons.Filled.Bluetooth
-                                    else Icons.Filled.BluetoothDisabled,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp),
-                            tint = if (isConnected) CyanPrimary else MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Connection status text
-            Text(
-                    text =
-                            when {
-                                isConnecting -> "正在连接..."
-                                isConnected -> "眼镜已连接"
-                                else -> "眼镜未连接"
-                            },
-                    style =
-                            MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.SemiBold
-                            ),
-                    color = MaterialTheme.colorScheme.onSurface
-            )
-
-            // Device name (show during connecting too)
-            val displayName = deviceName
-            if (displayName != null && (isConnected || isConnecting)) {
-                Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+        // Pulsing animation for connecting state
+        val infiniteTransition = rememberInfiniteTransition(label = "connecting")
+        val pulseAlpha by
+                infiniteTransition.animateFloat(
+                        initialValue = 0.3f,
+                        targetValue = 1f,
+                        animationSpec =
+                                infiniteRepeatable(
+                                        animation = tween(800, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                ),
+                        label = "pulse"
                 )
-            }
 
-            // Connecting subtitle
-            if (isConnecting) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                        text = "蓝牙配对中，请稍候约15秒",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Battery info
-            AnimatedVisibility(visible = isConnected && batteryLevel != null) {
-                Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                            imageVector =
-                                    when {
-                                        isCharging -> Icons.Filled.BatteryChargingFull
-                                        (batteryLevel ?: 100) <= 20 -> Icons.Filled.BatteryAlert
-                                        else -> Icons.Filled.BatteryFull
-                                    },
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint =
-                                    when {
-                                        (batteryLevel ?: 100) <= 20 ->
-                                                MaterialTheme.colorScheme.error
-                                        isCharging -> CyanPrimary
-                                        else -> MaterialTheme.colorScheme.primary
-                                    }
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                            text = "${batteryLevel}%" + if (isCharging) " 充电中" else "",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Action buttons
-            when {
-                isConnecting -> {
-                    // Disabled button during connection
-                    OutlinedButton(
-                            onClick = {},
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            enabled = false
-                    ) { Text("连接中...") }
-                }
-                isConnected -> {
-                    Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                                onClick = onForgetClick,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                        ) { Text("忘记设备") }
-                        FilledTonalButton(
-                                onClick = onConnectClick,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                        ) { Text("断开连接") }
-                    }
-                }
-                else -> {
-                    FilledTonalButton(
-                            onClick = onConnectClick,
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text(
-                                text = if (hasSavedDevice) "重新连接" else "搜索眼镜",
-                                style =
-                                        MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.SemiBold
-                                        )
+        Card(
+                modifier =
+                        Modifier.fillMaxWidth().semantics {
+                                contentDescription =
+                                        when {
+                                                isConnecting -> "正在连接眼镜，请稍候"
+                                                isConnected ->
+                                                        "眼镜已连接，${deviceName ?: ""}，电量${batteryLevel ?: "未知"}%"
+                                                else -> "眼镜未连接，点击连接"
+                                        }
+                        },
+                shape = RoundedCornerShape(20.dp),
+                colors =
+                        CardDefaults.cardColors(
+                                containerColor =
+                                        when {
+                                                isConnecting ->
+                                                        MaterialTheme.colorScheme.secondaryContainer
+                                                                .copy(alpha = 0.3f)
+                                                isConnected ->
+                                                        MaterialTheme.colorScheme.primaryContainer
+                                                                .copy(alpha = 0.3f)
+                                                else -> MaterialTheme.colorScheme.surfaceVariant
+                                        }
                         )
-                    }
-                    if (hasSavedDevice) {
-                        TextButton(onClick = onScanClick) { Text("搜索其他设备") }
-                    }
+        ) {
+                Column(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                        // Status icon
+                        Box(
+                                modifier =
+                                        Modifier.size(80.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                        Brush.radialGradient(
+                                                                colors =
+                                                                        when {
+                                                                                isConnecting ->
+                                                                                        listOf(
+                                                                                                CyanPrimary
+                                                                                                        .copy(
+                                                                                                                alpha =
+                                                                                                                        0.2f *
+                                                                                                                                pulseAlpha
+                                                                                                        ),
+                                                                                                CyanDark.copy(
+                                                                                                        alpha =
+                                                                                                                0.05f *
+                                                                                                                        pulseAlpha
+                                                                                                )
+                                                                                        )
+                                                                                isConnected ->
+                                                                                        listOf(
+                                                                                                CyanPrimary
+                                                                                                        .copy(
+                                                                                                                alpha =
+                                                                                                                        0.3f
+                                                                                                        ),
+                                                                                                CyanDark.copy(
+                                                                                                        alpha =
+                                                                                                                0.1f
+                                                                                                )
+                                                                                        )
+                                                                                else ->
+                                                                                        listOf(
+                                                                                                MaterialTheme
+                                                                                                        .colorScheme
+                                                                                                        .error
+                                                                                                        .copy(
+                                                                                                                alpha =
+                                                                                                                        0.2f
+                                                                                                        ),
+                                                                                                MaterialTheme
+                                                                                                        .colorScheme
+                                                                                                        .error
+                                                                                                        .copy(
+                                                                                                                alpha =
+                                                                                                                        0.05f
+                                                                                                        )
+                                                                                        )
+                                                                        }
+                                                        )
+                                                ),
+                                contentAlignment = Alignment.Center
+                        ) {
+                                if (isConnecting) {
+                                        // Pulsing Bluetooth icon + CircularProgressIndicator
+                                        CircularProgressIndicator(
+                                                modifier = Modifier.size(60.dp),
+                                                strokeWidth = 3.dp,
+                                                color = CyanPrimary.copy(alpha = pulseAlpha)
+                                        )
+                                        Icon(
+                                                imageVector =
+                                                        Icons.AutoMirrored.Filled
+                                                                .BluetoothSearching,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(32.dp),
+                                                tint = CyanPrimary.copy(alpha = pulseAlpha)
+                                        )
+                                } else {
+                                        Icon(
+                                                imageVector =
+                                                        if (isConnected) Icons.Filled.Bluetooth
+                                                        else Icons.Filled.BluetoothDisabled,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(40.dp),
+                                                tint =
+                                                        if (isConnected) CyanPrimary
+                                                        else MaterialTheme.colorScheme.error
+                                        )
+                                }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Connection status text
+                        Text(
+                                text =
+                                        when {
+                                                isConnecting -> "正在连接..."
+                                                isConnected -> "眼镜已连接"
+                                                else -> "眼镜未连接"
+                                        },
+                                style =
+                                        MaterialTheme.typography.titleLarge.copy(
+                                                fontWeight = FontWeight.SemiBold
+                                        ),
+                                color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        // Device name (show during connecting too)
+                        val displayName = deviceName
+                        if (displayName != null && (isConnected || isConnecting)) {
+                                Text(
+                                        text = displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                        }
+
+                        // Connecting subtitle
+                        if (isConnecting) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                        text = "蓝牙配对中，请稍候约15秒",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color =
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                        alpha = 0.7f
+                                                )
+                                )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Battery info
+                        AnimatedVisibility(visible = isConnected && batteryLevel != null) {
+                                Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                ) {
+                                        Icon(
+                                                imageVector =
+                                                        when {
+                                                                isCharging ->
+                                                                        Icons.Filled
+                                                                                .BatteryChargingFull
+                                                                (batteryLevel ?: 100) <= 20 ->
+                                                                        Icons.Filled.BatteryAlert
+                                                                else -> Icons.Filled.BatteryFull
+                                                        },
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                                tint =
+                                                        when {
+                                                                (batteryLevel ?: 100) <= 20 ->
+                                                                        MaterialTheme.colorScheme
+                                                                                .error
+                                                                isCharging -> CyanPrimary
+                                                                else ->
+                                                                        MaterialTheme.colorScheme
+                                                                                .primary
+                                                        }
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                                text =
+                                                        "${batteryLevel}%" +
+                                                                if (isCharging) " 充电中" else "",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.primary
+                                        )
+                                }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Action buttons
+                        when {
+                                isConnecting -> {
+                                        // Disabled button during connection
+                                        OutlinedButton(
+                                                onClick = {},
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = RoundedCornerShape(16.dp),
+                                                enabled = false
+                                        ) { Text("连接中...") }
+                                }
+                                isConnected -> {
+                                        Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                                OutlinedButton(
+                                                        onClick = onForgetClick,
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = RoundedCornerShape(12.dp)
+                                                ) { Text("忘记设备") }
+                                                FilledTonalButton(
+                                                        onClick = onConnectClick,
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = RoundedCornerShape(12.dp)
+                                                ) { Text("断开连接") }
+                                        }
+                                }
+                                else -> {
+                                        FilledTonalButton(
+                                                onClick = onConnectClick,
+                                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                                shape = RoundedCornerShape(16.dp)
+                                        ) {
+                                                Text(
+                                                        text =
+                                                                if (hasSavedDevice) "重新连接"
+                                                                else "搜索眼镜",
+                                                        style =
+                                                                MaterialTheme.typography.titleMedium
+                                                                        .copy(
+                                                                                fontWeight =
+                                                                                        FontWeight
+                                                                                                .SemiBold
+                                                                        )
+                                                )
+                                        }
+                                        if (hasSavedDevice) {
+                                                TextButton(onClick = onScanClick) { Text("搜索其他设备") }
+                                        }
+                                }
+                        }
                 }
-            }
         }
-    }
 }
 
 // ── BLE Scan Dialog ──────────────────────────────────────────
 
 @Composable
 private fun BleScanDialog(viewModel: GlassesViewModel, onDismiss: () -> Unit) {
-    val devices by viewModel.scannedDevices.collectAsState()
-    val isScanning by viewModel.isScanning.collectAsState()
+        val devices by viewModel.scannedDevices.collectAsState()
+        val isScanning by viewModel.isScanning.collectAsState()
 
-    // Start scanning when dialog opens
-    LaunchedEffect(Unit) { viewModel.onScanRequested() }
+        // Start scanning when dialog opens
+        LaunchedEffect(Unit) { viewModel.onScanRequested() }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp, max = 500.dp)
-        ) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                // Title
-                Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+        Dialog(onDismissRequest = onDismiss) {
+                Card(
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp, max = 500.dp)
                 ) {
-                    Text(
-                            text = "搜索蓝牙设备",
-                            style =
-                                    MaterialTheme.typography.titleLarge.copy(
-                                            fontWeight = FontWeight.Bold
-                                    )
-                    )
-                    if (isScanning) {
-                        CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                        )
-                    }
-                }
+                        Column(modifier = Modifier.padding(24.dp)) {
+                                // Title
+                                Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                        Text(
+                                                text = "搜索蓝牙设备",
+                                                style =
+                                                        MaterialTheme.typography.titleLarge.copy(
+                                                                fontWeight = FontWeight.Bold
+                                                        )
+                                        )
+                                        if (isScanning) {
+                                                CircularProgressIndicator(
+                                                        modifier = Modifier.size(24.dp),
+                                                        strokeWidth = 2.dp
+                                                )
+                                        }
+                                }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                        text = if (isScanning) "正在搜索附近的眼镜设备..." else "搜索完成，找到 ${devices.size} 个设备",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                                Text(
+                                        text =
+                                                if (isScanning) "正在搜索附近的眼镜设备..."
+                                                else "搜索完成，找到 ${devices.size} 个设备",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(16.dp))
 
-                // Device list
-                if (devices.isEmpty() && !isScanning) {
-                    Box(
-                            modifier = Modifier.fillMaxWidth().height(120.dp),
-                            contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                    Icons.AutoMirrored.Filled.BluetoothSearching,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp),
-                                    tint =
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                                    alpha = 0.4f
-                                            )
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                    text = "未找到设备",
-                                    color =
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                                    alpha = 0.6f
-                                            )
-                            )
+                                // Device list
+                                if (devices.isEmpty() && !isScanning) {
+                                        Box(
+                                                modifier = Modifier.fillMaxWidth().height(120.dp),
+                                                contentAlignment = Alignment.Center
+                                        ) {
+                                                Column(
+                                                        horizontalAlignment =
+                                                                Alignment.CenterHorizontally
+                                                ) {
+                                                        Icon(
+                                                                Icons.AutoMirrored.Filled
+                                                                        .BluetoothSearching,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.size(40.dp),
+                                                                tint =
+                                                                        MaterialTheme.colorScheme
+                                                                                .onSurfaceVariant
+                                                                                .copy(alpha = 0.4f)
+                                                        )
+                                                        Spacer(modifier = Modifier.height(8.dp))
+                                                        Text(
+                                                                text = "未找到设备",
+                                                                color =
+                                                                        MaterialTheme.colorScheme
+                                                                                .onSurfaceVariant
+                                                                                .copy(alpha = 0.6f)
+                                                        )
+                                                }
+                                        }
+                                } else {
+                                        LazyColumn(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                                items(devices, key = { it.address }) { device ->
+                                                        DeviceListItem(
+                                                                device = device,
+                                                                onClick = {
+                                                                        viewModel.onDeviceSelected(
+                                                                                device
+                                                                        )
+                                                                }
+                                                        )
+                                                }
+                                        }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                // Buttons
+                                Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                        OutlinedButton(
+                                                onClick = onDismiss,
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(12.dp)
+                                        ) { Text("取消") }
+                                        if (!isScanning) {
+                                                FilledTonalButton(
+                                                        onClick = { viewModel.onScanRequested() },
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = RoundedCornerShape(12.dp)
+                                                ) { Text("重新搜索") }
+                                        }
+                                }
                         }
-                    }
-                } else {
-                    LazyColumn(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(devices, key = { it.address }) { device ->
-                            DeviceListItem(
-                                    device = device,
-                                    onClick = { viewModel.onDeviceSelected(device) }
-                            )
-                        }
-                    }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Buttons
-                Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                    ) { Text("取消") }
-                    if (!isScanning) {
-                        FilledTonalButton(
-                                onClick = { viewModel.onScanRequested() },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                        ) { Text("重新搜索") }
-                    }
-                }
-            }
         }
-    }
 }
 
 @Composable
 private fun DeviceListItem(device: GlassesRepository.ScannedDevice, onClick: () -> Unit) {
-    Surface(
-            onClick = onClick,
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            modifier =
-                    Modifier.semantics {
-                        contentDescription = "蓝牙设备 ${device.name}，信号强度 ${device.rssi}"
-                    }
-    ) {
-        Row(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+        Surface(
+                onClick = onClick,
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier =
+                        Modifier.semantics {
+                                contentDescription = "蓝牙设备 ${device.name}，信号强度 ${device.rssi}"
+                        }
         ) {
-            Icon(
-                    Icons.Filled.Bluetooth,
-                    contentDescription = null,
-                    tint = CyanPrimary,
-                    modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                        text = device.name,
-                        style =
-                                MaterialTheme.typography.bodyLarge.copy(
-                                        fontWeight = FontWeight.Medium
-                                ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                        text = device.address,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            // Signal strength indicator
-            Text(
-                    text = "${device.rssi} dBm",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                        Icon(
+                                Icons.Filled.Bluetooth,
+                                contentDescription = null,
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                        text = device.name,
+                                        style =
+                                                MaterialTheme.typography.bodyLarge.copy(
+                                                        fontWeight = FontWeight.Medium
+                                                ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                        text = device.address,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                        }
+                        // Signal strength indicator
+                        Text(
+                                text = "${device.rssi} dBm",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                }
         }
-    }
 }
 
 @Composable
@@ -665,150 +728,167 @@ private fun QuickActionCard(
         isActive: Boolean = false,
         onClick: () -> Unit
 ) {
-    // Blinking dot animation for recording state
-    val infiniteTransition = rememberInfiniteTransition(label = "recording")
-    val dotAlpha by
-            infiniteTransition.animateFloat(
-                    initialValue = 1f,
-                    targetValue = 0.2f,
-                    animationSpec =
-                            infiniteRepeatable(
-                                    animation = tween(600, easing = LinearEasing),
-                                    repeatMode = RepeatMode.Reverse
-                            ),
-                    label = "dot_blink"
-            )
-    val borderAlpha by
-            infiniteTransition.animateFloat(
-                    initialValue = 0.15f,
-                    targetValue = 0.4f,
-                    animationSpec =
-                            infiniteRepeatable(
-                                    animation = tween(1000, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Reverse
-                            ),
-                    label = "border_pulse"
-            )
-
-    // Elapsed time counter
-    var elapsedSeconds by remember { mutableIntStateOf(0) }
-    LaunchedEffect(isActive) {
-        elapsedSeconds = 0
-        if (isActive) {
-            while (true) {
-                kotlinx.coroutines.delay(1000)
-                elapsedSeconds++
-            }
-        }
-    }
-
-    Card(
-            onClick = onClick,
-            modifier =
-                    modifier.height(80.dp)
-                            .then(
-                                    if (isActive)
-                                            Modifier.background(
-                                                    MaterialTheme.colorScheme.error.copy(
-                                                            alpha = borderAlpha
-                                                    ),
-                                                    RoundedCornerShape(16.dp)
-                                            )
-                                    else Modifier
-                            )
-                            .semantics { contentDescription = "$title，$description" },
-            shape = RoundedCornerShape(16.dp),
-            enabled = enabled,
-            colors =
-                    CardDefaults.cardColors(
-                            containerColor =
-                                    when {
-                                        isActive -> MaterialTheme.colorScheme.errorContainer
-                                        else -> MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                            disabledContainerColor =
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    )
-    ) {
-        Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (icon != null) {
-                // Icon with blinking effect when recording
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint =
-                                    when {
-                                        !enabled ->
-                                                MaterialTheme.colorScheme.onSurface.copy(
-                                                        alpha = 0.4f
-                                                )
-                                        isActive ->
-                                                MaterialTheme.colorScheme.error.copy(
-                                                        alpha = dotAlpha
-                                                )
-                                        else -> CyanPrimary
-                                    }
-                    )
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Blinking red dot when recording
-                    if (isActive) {
-                        Box(
-                                modifier =
-                                        Modifier.size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(
-                                                        MaterialTheme.colorScheme.error.copy(
-                                                                alpha = dotAlpha
-                                                        )
-                                                )
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                    }
-                    Text(
-                            text = title,
-                            style =
-                                    MaterialTheme.typography.titleSmall.copy(
-                                            fontWeight = FontWeight.SemiBold
-                                    ),
-                            color =
-                                    when {
-                                        !enabled ->
-                                                MaterialTheme.colorScheme.onSurface.copy(
-                                                        alpha = 0.4f
-                                                )
-                                        isActive -> MaterialTheme.colorScheme.error
-                                        else -> MaterialTheme.colorScheme.onSurface
-                                    }
-                    )
-                }
-                Text(
-                        text =
-                                if (isActive) {
-                                    val min = elapsedSeconds / 60
-                                    val sec = elapsedSeconds % 60
-                                    String.format("%02d:%02d", min, sec)
-                                } else description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color =
-                                when {
-                                    isActive -> MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-                                    enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    else ->
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                                    alpha = 0.4f
-                                            )
-                                }
+        // Blinking dot animation for recording state
+        val infiniteTransition = rememberInfiniteTransition(label = "recording")
+        val dotAlpha by
+                infiniteTransition.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 0.2f,
+                        animationSpec =
+                                infiniteRepeatable(
+                                        animation = tween(600, easing = LinearEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                ),
+                        label = "dot_blink"
                 )
-            }
+        val borderAlpha by
+                infiniteTransition.animateFloat(
+                        initialValue = 0.15f,
+                        targetValue = 0.4f,
+                        animationSpec =
+                                infiniteRepeatable(
+                                        animation = tween(1000, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                ),
+                        label = "border_pulse"
+                )
+
+        // Elapsed time counter
+        var elapsedSeconds by remember { mutableIntStateOf(0) }
+        LaunchedEffect(isActive) {
+                elapsedSeconds = 0
+                if (isActive) {
+                        while (true) {
+                                kotlinx.coroutines.delay(1000)
+                                elapsedSeconds++
+                        }
+                }
         }
-    }
+
+        Card(
+                onClick = onClick,
+                modifier =
+                        modifier.height(80.dp)
+                                .then(
+                                        if (isActive)
+                                                Modifier.background(
+                                                        MaterialTheme.colorScheme.error.copy(
+                                                                alpha = borderAlpha
+                                                        ),
+                                                        RoundedCornerShape(16.dp)
+                                                )
+                                        else Modifier
+                                )
+                                .semantics { contentDescription = "$title，$description" },
+                shape = RoundedCornerShape(16.dp),
+                enabled = enabled,
+                colors =
+                        CardDefaults.cardColors(
+                                containerColor =
+                                        when {
+                                                isActive -> MaterialTheme.colorScheme.errorContainer
+                                                else -> MaterialTheme.colorScheme.surfaceVariant
+                                        },
+                                disabledContainerColor =
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+        ) {
+                Row(
+                        modifier =
+                                Modifier.fillMaxSize()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                        if (icon != null) {
+                                // Icon with blinking effect when recording
+                                Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                                imageVector = icon,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp),
+                                                tint =
+                                                        when {
+                                                                !enabled ->
+                                                                        MaterialTheme.colorScheme
+                                                                                .onSurface.copy(
+                                                                                alpha = 0.4f
+                                                                        )
+                                                                isActive ->
+                                                                        MaterialTheme.colorScheme
+                                                                                .error.copy(
+                                                                                alpha = dotAlpha
+                                                                        )
+                                                                else -> CyanPrimary
+                                                        }
+                                        )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // Blinking red dot when recording
+                                        if (isActive) {
+                                                Box(
+                                                        modifier =
+                                                                Modifier.size(8.dp)
+                                                                        .clip(CircleShape)
+                                                                        .background(
+                                                                                MaterialTheme
+                                                                                        .colorScheme
+                                                                                        .error.copy(
+                                                                                        alpha =
+                                                                                                dotAlpha
+                                                                                )
+                                                                        )
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                        }
+                                        Text(
+                                                text = title,
+                                                style =
+                                                        MaterialTheme.typography.titleSmall.copy(
+                                                                fontWeight = FontWeight.SemiBold
+                                                        ),
+                                                color =
+                                                        when {
+                                                                !enabled ->
+                                                                        MaterialTheme.colorScheme
+                                                                                .onSurface.copy(
+                                                                                alpha = 0.4f
+                                                                        )
+                                                                isActive ->
+                                                                        MaterialTheme.colorScheme
+                                                                                .error
+                                                                else ->
+                                                                        MaterialTheme.colorScheme
+                                                                                .onSurface
+                                                        }
+                                        )
+                                }
+                                Text(
+                                        text =
+                                                if (isActive) {
+                                                        val min = elapsedSeconds / 60
+                                                        val sec = elapsedSeconds % 60
+                                                        String.format("%02d:%02d", min, sec)
+                                                } else description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color =
+                                                when {
+                                                        isActive ->
+                                                                MaterialTheme.colorScheme.error
+                                                                        .copy(alpha = 0.7f)
+                                                        enabled ->
+                                                                MaterialTheme.colorScheme
+                                                                        .onSurfaceVariant
+                                                        else ->
+                                                                MaterialTheme.colorScheme
+                                                                        .onSurfaceVariant.copy(
+                                                                        alpha = 0.4f
+                                                                )
+                                                }
+                                )
+                        }
+                }
+        }
 }

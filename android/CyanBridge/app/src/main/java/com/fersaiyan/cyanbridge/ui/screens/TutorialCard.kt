@@ -20,8 +20,12 @@ import com.fersaiyan.cyanbridge.ui.accessibility.isBlindMode
 
 /** 教学辅助卡片：告诉用户如何使用智能眼镜。 */
 @Composable
-fun TutorialCard(modifier: Modifier = Modifier) {
-    var expanded by remember { mutableStateOf(false) }
+fun TutorialCard(
+        modifier: Modifier = Modifier,
+        initialExpanded: Boolean = false,
+        onDismiss: (() -> Unit)? = null,
+) {
+    var expanded by remember { mutableStateOf(initialExpanded) }
     val blind = isBlindMode()
 
     Card(

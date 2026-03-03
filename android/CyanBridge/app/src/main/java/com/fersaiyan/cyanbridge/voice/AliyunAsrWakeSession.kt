@@ -84,8 +84,8 @@ class AliyunAsrWakeSession(
                 // Opus 解码后输出 PCM 数据。
                 override fun onDecodeStream(pcmData: ByteArray) {
                     pcmBytesTotal += pcmData.size
-                    if (pcmBytesTotal % 16000 < pcmData.size) { // ~每1秒log一次
-                        Log.i(TAG, "PCM decoded: ${pcmBytesTotal} bytes total")
+                    if (pcmBytesTotal % (160000) == 0L) {
+                        Log.d(TAG, "PCM decoded: ${pcmBytesTotal} bytes total")
                     }
                     audioQueue.offer(pcmData)
                 }
@@ -199,7 +199,7 @@ class AliyunAsrWakeSession(
     override fun onNuiNeedAudioData(buffer: ByteArray, len: Int): Int {
         val read = audioQueue.read(buffer, len)
         if (read > 0) {
-            Log.i(TAG, "onNuiNeedAudioData: requested=$len returned=$read")
+            if (read == 0 && len > 0) Log.d(TAG, "onNuiNeedAudioData: no data")
         }
         return read
     }
@@ -398,8 +398,8 @@ class AliyunAsrWakeSession(
             if (data.isNotEmpty()) {
                 queue.offer(data)
                 offerCount++
-                if (offerCount % 50 == 0) {
-                    Log.i("AliAsr", "audioQueue.offer #$offerCount queueSize=${queue.size}")
+                if (offerCount % 500 == 0) {
+                    Log.d("AliAsr", "audioQueue.offer #$offerCount queueSize=${queue.size}")
                 }
             }
         }
@@ -423,8 +423,8 @@ class AliyunAsrWakeSession(
                 offset += toCopy
                 total += toCopy
             }
-            if (readCallCount % 100 == 0) {
-                Log.i(
+            if (readCallCount % 1000 == 0) {
+                Log.d(
                         "AliAsr",
                         "audioQueue.read #$readCallCount queueSize=${queue.size} returned=$total"
                 )
