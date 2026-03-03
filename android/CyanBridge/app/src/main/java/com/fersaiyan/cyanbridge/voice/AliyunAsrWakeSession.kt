@@ -198,6 +198,9 @@ class AliyunAsrWakeSession(
     /** NUI 需要音频数据时从队列读取。 */
     override fun onNuiNeedAudioData(buffer: ByteArray, len: Int): Int {
         val read = audioQueue.read(buffer, len)
+        if (read > 0) {
+            Log.i(TAG, "onNuiNeedAudioData: requested=$len returned=$read")
+        }
         return read
     }
 
@@ -378,15 +381,23 @@ class AliyunAsrWakeSession(
         private var current: ByteArray? = null
         private var offset: Int = 0
 
+        private var offerCount = 0
+        private var readCallCount = 0
+
         /** 写入 PCM 块。 */
         fun offer(data: ByteArray) {
             if (data.isNotEmpty()) {
                 queue.offer(data)
+                offerCount++
+                if (offerCount % 50 == 0) {
+                    Log.i("AliAsr", "audioQueue.offer #$offerCount queueSize=${queue.size}")
+                }
             }
         }
 
         /** 读取 PCM 数据供 NUI 使用。 */
         fun read(dst: ByteArray, len: Int): Int {
+            readCallCount++
             var total = 0
             while (total < len) {
                 val cur = current
@@ -403,6 +414,12 @@ class AliyunAsrWakeSession(
                 offset += toCopy
                 total += toCopy
             }
+            if (readCallCount % 100 == 0) {
+                Log.i(
+                        "AliAsr",
+                        "audioQueue.read #$readCallCount queueSize=${queue.size} returned=$total"
+                )
+            }
             return total
         }
 
@@ -411,6 +428,7 @@ class AliyunAsrWakeSession(
             queue.clear()
             current = null
             offset = 0
+            Log.i("AliAsr", "audioQueue.clear()")
         }
     }
 
