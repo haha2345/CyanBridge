@@ -41,45 +41,66 @@ object ChatEngine {
         initTts(context.applicationContext)
     }
 
+    private var appCtx: Context? = null
+
     private fun initTts(appContext: Context) {
-        tts =
+        appCtx = appContext
+        // First create a temporary TTS just to list engines
+        val probe =
                 TextToSpeech(appContext) { status ->
-                    Log.i(TAG, "TTS init callback status=$status")
-                    if (status == TextToSpeech.SUCCESS) {
-                        setupTtsLanguage()
-                    } else {
-                        Log.e(
-                                TAG,
-                                "TTS init failed (status=$status), retrying with default engine..."
-                        )
-                        // Retry: sometimes a second init succeeds
-                        mainHandler.postDelayed(
-                                {
-                                    tts?.shutdown()
-                                    tts =
-                                            TextToSpeech(appContext) { retryStatus ->
-                                                Log.i(TAG, "TTS retry callback status=$retryStatus")
-                                                if (retryStatus == TextToSpeech.SUCCESS) {
-                                                    setupTtsLanguage()
-                                                } else {
-                                                    Log.e(
-                                                            TAG,
-                                                            "TTS retry also failed. Check device TTS settings."
-                                                    )
-                                                    // List available engines for diagnostics
-                                                    tts?.engines?.forEach { engine ->
-                                                        Log.i(
-                                                                TAG,
-                                                                "  Available TTS engine: ${engine.name} (${engine.label})"
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                },
-                                1000
-                        )
+                    Log.i(TAG, "TTS probe status=$status")
+                    val engines = tts?.engines?.map { it.name } ?: emptyList()
+                    Log.i(TAG, "Available TTS engines: $engines")
+                    tts?.shutdown()
+
+                    // Preferred engine order for Chinese support
+                    val preferred =
+                            listOf(
+                                    "com.xiaomi.mibrain.speech", // 小米
+                                    "com.iflytek.speechcloud", // 讯飞
+                                    "com.google.android.tts", // Google
+                                    "com.samsung.SMT", // Samsung
+                                    "com.huawei.hiai", // Huawei
+                            )
+                    val sorted =
+                            preferred.filter { it in engines } + engines.filter { it !in preferred }
+
+                    if (sorted.isEmpty()) {
+                        Log.e(TAG, "No TTS engines found on device!")
+                        return@TextToSpeech
                     }
+
+                    tryNextEngine(appContext, sorted, 0)
                 }
+        tts = probe
+    }
+
+    private fun tryNextEngine(ctx: Context, engines: List<String>, index: Int) {
+        if (index >= engines.size) {
+            Log.e(TAG, "All TTS engines failed. Device needs a TTS engine installed.")
+            return
+        }
+        val engine = engines[index]
+        Log.i(TAG, "Trying TTS engine [$index/${engines.size}]: $engine")
+
+        tts?.shutdown()
+        tts =
+                TextToSpeech(
+                        ctx,
+                        { status ->
+                            Log.i(TAG, "TTS engine $engine → status=$status")
+                            if (status == TextToSpeech.SUCCESS) {
+                                setupTtsLanguage()
+                            } else {
+                                Log.w(TAG, "Engine $engine failed, trying next...")
+                                mainHandler.postDelayed(
+                                        { tryNextEngine(ctx, engines, index + 1) },
+                                        500
+                                )
+                            }
+                        },
+                        engine
+                )
     }
 
     private fun setupTtsLanguage() {
