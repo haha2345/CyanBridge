@@ -55,7 +55,7 @@ class TranslateEngine(private val context: Context) {
     val languagePair: StateFlow<LanguagePair> = _languagePair.asStateFlow()
 
     // ── Internal ──
-    private val nui = NativeNui(Constants.ModeType.MODE_ASR)
+    private val nui = NativeNui()
     private val nuiInitialized = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
     private var audioRecord: AudioRecord? = null
@@ -135,23 +135,26 @@ class TranslateEngine(private val context: Context) {
             return false
         }
         CommonUtils.copyAssetsData(context.applicationContext)
-        val workspace = context.getExternalFilesDir("aliyun_translate") ?: context.cacheDir
-        if (!workspace.exists()) workspace.mkdirs()
 
+        val debugPath = context.externalCacheDir?.absolutePath + "/aliyun_translate_debug"
         val ticket = JSONObject()
         ticket["app_key"] = appKey
         ticket["token"] = token
         ticket["device_id"] = getDeviceId()
         ticket["url"] = "wss://nls-gateway-cn-shanghai.aliyuncs.com/ws/v1"
-        ticket["workspace"] = workspace.absolutePath
+        ticket["debug_path"] = debugPath
+        ticket["log_track_level"] =
+                Constants.LogLevel.toInt(Constants.LogLevel.LOG_LEVEL_NONE).toString()
+        ticket["service_mode"] = Constants.ModeAsrCloud
 
         val ret =
                 nui.initialize(
                         nuiCallback,
                         ticket.toString(),
-                        Constants.LogLevel.LOG_LEVEL_NONE,
+                        Constants.LogLevel.LOG_LEVEL_DEBUG,
                         false
                 )
+        Log.i(TAG, "nui.initialize ret=$ret")
         if (ret != Constants.NuiResultCode.SUCCESS) {
             Log.e(TAG, "nui.initialize failed: $ret")
             return false
@@ -167,23 +170,23 @@ class TranslateEngine(private val context: Context) {
     }
 
     private fun buildAsrParams(): String {
+        val nlsConfig = JSONObject()
+        nlsConfig["enable_intermediate_result"] = true
+        nlsConfig["enable_punctuation_prediction"] = true
+        nlsConfig["sample_rate"] = 16000
+        nlsConfig["sr_format"] = "pcm"
+        nlsConfig["enable_voice_detection"] = true
+        nlsConfig["max_start_silence"] = 10000
+        nlsConfig["max_end_silence"] = 1500
+
         val p = JSONObject()
-        p["nls_config"] =
-                JSONObject().apply {
-                    this["enable_intermediate_result"] = true
-                    this["enable_punctuation_prediction"] = true
-                    this["enable_inverse_text_normalization"] = true
-                }
+        p["nls_config"] = nlsConfig
         p["service_type"] = Constants.kServiceTypeASR
         return p.toString()
     }
 
     private fun buildDialogParams(): String {
-        return JSONObject()
-                .apply {
-                    this["enable_voice_detection"] = false // no VAD, continuous mode
-                }
-                .toString()
+        return JSONObject().toString()
     }
 
     // ── 手机麦克风录音 ──
@@ -352,14 +355,21 @@ class TranslateEngine(private val context: Context) {
                                 }
                         if (text != null) {
                             _state.value = State.PLAYING
-                            val id = "translate_${System.currentTimeMillis()}"
-                            val path = ttsService.synthesizeToFile(text, id)
-                            if (path != null) {
-                                audioPlayer.play(path)
-                                // Wait for playback to roughly finish
-                                delay((text.length * 200L).coerceAtMost(5000))
+                            val id = UUID.randomUUID().toString()
+                            try {
+                                val path = ttsService.synthesizeToFile(text, id)
+                                if (path != null) {
+                                    audioPlayer.play(path)
+                                    // Wait for playback to roughly finish
+                                    delay((text.length * 200L).coerceAtMost(5000))
+                                } else {
+                                    Log.e(TAG, "TTS synthesize returned null for: $text")
+                                }
+                            } catch (t: Throwable) {
+                                Log.e(TAG, "TTS playback error", t)
                             }
-                            if (ttsQueue.isEmpty()) {
+                            // Always reset state after TTS attempt
+                            if (ttsQueue.isEmpty() && running.get()) {
                                 _state.value = State.LISTENING
                             }
                         }
