@@ -293,43 +293,46 @@ class MediaSyncManager(private val context: Context) {
 
         // Wait for P2P to connect and try to find device IP
         val deviceIp =
-                withTimeoutOrNull(90_000) {
+                withTimeoutOrNull(60_000) {
                     var resolvedIp: String? = null
                     val startMs = System.currentTimeMillis()
                     var lastLogMs = 0L
-                    var didSubnetScan = false
-                    while (isActive && System.currentTimeMillis() - startMs < 85_000) {
+                    while (isActive && System.currentTimeMillis() - startMs < 55_000) {
                         val now = System.currentTimeMillis()
-                        if (now - lastLogMs > 5000) {
+                        if (now - lastLogMs > 3000) {
                             lastLogMs = now
                             Log.i(
                                     TAG,
                                     "Resolving IP... p2p=$p2pConnected, bleIp=$bleIp, " +
-                                            "bridgeIp=${bleIpBridge.ip.value}, groupOwnerIp=$groupOwnerIp"
+                                            "bridgeIp=${bleIpBridge.ip.value}, groupOwnerIp=$groupOwnerIp, " +
+                                            "p2pNet=${p2pNetwork != null}"
                             )
                         }
 
-                        // Try candidate IPs
+                        if (!p2pConnected) {
+                            delay(500)
+                            continue
+                        }
+
+                        // Ensure we're bound to the P2P network for HTTP
+                        if (p2pNetwork == null) {
+                            p2pNetwork = findP2pNetwork()
+                            if (p2pNetwork != null) {
+                                bindProcess(p2pNetwork)
+                                Log.i(TAG, "Bound process to P2P network")
+                            }
+                        }
+
+                        // Try candidate IPs (BLE-reported first)
                         val candidates = buildCandidateIps()
                         for (ip in candidates) {
                             if (ip.isBlank() || ip == "192.168.49.1") continue
-                            if (mediaConfigOk(ip, 2000)) {
+                            if (mediaConfigOk(ip, 3000)) {
                                 resolvedIp = ip
                                 break
                             }
                         }
                         if (resolvedIp != null) break
-
-                        // Subnet scan as last resort
-                        if (!didSubnetScan &&
-                                        p2pConnected &&
-                                        groupOwnerIp?.startsWith("192.168.49.") == true
-                        ) {
-                            didSubnetScan = true
-                            Log.i(TAG, "Scanning 192.168.49.0/24...")
-                            resolvedIp = scanSubnet("192.168.49.")
-                            if (resolvedIp != null) break
-                        }
 
                         delay(1500)
                     }
@@ -549,8 +552,10 @@ class MediaSyncManager(private val context: Context) {
         val network = p2pNetwork ?: findP2pNetwork()?.also { p2pNetwork = it }
         val conn =
                 if (network != null) {
+                    Log.d(TAG, "openConnection via P2P network: $url")
                     network.openConnection(url) as HttpURLConnection
                 } else {
+                    Log.w(TAG, "openConnection via default (NO P2P!): $url")
                     url.openConnection() as HttpURLConnection
                 }
         conn.instanceFollowRedirects = true
