@@ -85,10 +85,7 @@ class AliyunAsrWakeSession(
                 override fun onDecodeStream(pcmData: ByteArray) {
                     pcmBytesTotal += pcmData.size
                     if (pcmBytesTotal % 16000 < pcmData.size) { // ~每1秒log一次
-                        Log.i(
-                                TAG,
-                                "PCM decoded: ${pcmBytesTotal} bytes total, queue=${audioQueue.size()}"
-                        )
+                        Log.i(TAG, "PCM decoded: ${pcmBytesTotal} bytes total")
                     }
                     audioQueue.offer(pcmData)
                 }
