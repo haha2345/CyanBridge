@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.fersaiyan.cyanbridge.ui.bleIpBridge
 import com.fersaiyan.cyanbridge.ui.wifi.p2p.WifiP2pManagerSingleton
 import com.oudmon.ble.base.bluetooth.BleOperateManager
 import com.oudmon.ble.base.communication.LargeDataHandler
@@ -89,11 +90,11 @@ class MediaSyncManager(private val context: Context) {
     val mediaCount: StateFlow<MediaCount?> = _mediaCount.asStateFlow()
 
     private var syncJob: Job? = null
-    private var p2pNetwork: Network? = null
-    private var boundNetwork: Network? = null
-    private var p2pConnected = false
-    private var groupOwnerIp: String? = null
-    private var bleIp: String? = null
+    @Volatile private var p2pNetwork: Network? = null
+    @Volatile private var boundNetwork: Network? = null
+    @Volatile private var p2pConnected = false
+    @Volatile private var groupOwnerIp: String? = null
+    @Volatile private var bleIp: String? = null
 
     // ── Public API ──
 
@@ -295,26 +296,42 @@ class MediaSyncManager(private val context: Context) {
                 withTimeoutOrNull(90_000) {
                     var resolvedIp: String? = null
                     val startMs = System.currentTimeMillis()
+                    var lastLogMs = 0L
+                    var didSubnetScan = false
                     while (isActive && System.currentTimeMillis() - startMs < 85_000) {
-                        if (p2pConnected) {
-                            // Try candidates
-                            val candidates = buildCandidateIps()
-                            for (ip in candidates) {
-                                if (ip.isBlank()) continue
-                                if (mediaConfigOk(ip, 3000)) {
-                                    resolvedIp = ip
-                                    break
-                                }
-                            }
-                            if (resolvedIp != null) break
+                        val now = System.currentTimeMillis()
+                        if (now - lastLogMs > 5000) {
+                            lastLogMs = now
+                            Log.i(
+                                    TAG,
+                                    "Resolving IP... p2p=$p2pConnected, bleIp=$bleIp, " +
+                                            "bridgeIp=${bleIpBridge.ip.value}, groupOwnerIp=$groupOwnerIp"
+                            )
+                        }
 
-                            // Try subnet scan
-                            if (groupOwnerIp?.startsWith("192.168.49.") == true) {
-                                resolvedIp = scanSubnet("192.168.49.")
-                                if (resolvedIp != null) break
+                        // Try candidate IPs
+                        val candidates = buildCandidateIps()
+                        for (ip in candidates) {
+                            if (ip.isBlank() || ip == "192.168.49.1") continue
+                            if (mediaConfigOk(ip, 2000)) {
+                                resolvedIp = ip
+                                break
                             }
                         }
-                        delay(2000)
+                        if (resolvedIp != null) break
+
+                        // Subnet scan as last resort
+                        if (!didSubnetScan &&
+                                        p2pConnected &&
+                                        groupOwnerIp?.startsWith("192.168.49.") == true
+                        ) {
+                            didSubnetScan = true
+                            Log.i(TAG, "Scanning 192.168.49.0/24...")
+                            resolvedIp = scanSubnet("192.168.49.")
+                            if (resolvedIp != null) break
+                        }
+
+                        delay(1500)
                     }
                     resolvedIp
                 }
@@ -577,21 +594,19 @@ class MediaSyncManager(private val context: Context) {
     }
 
     private fun buildCandidateIps(): List<String> {
-        val list = mutableListOf<String>()
-        bleIp?.let { list.add(it) }
-        groupOwnerIp?.let { ip ->
-            // Try flipping last octet
-            val parts = ip.split(".")
-            if (parts.size == 4) {
-                val lastOctet = parts[3].toIntOrNull() ?: 0
-                val flipped =
-                        if (lastOctet == 1) "${parts[0]}.${parts[1]}.${parts[2]}.134"
-                        else "${parts[0]}.${parts[1]}.${parts[2]}.1"
-                list.add(flipped)
-            }
-            list.add(ip)
-        }
-        return list.distinct()
+        val set = LinkedHashSet<String>()
+        // 1. BLE notify listener IP (from our own listener)
+        bleIp?.let { set.add(it) }
+        // 2. Global BleIpBridge IP (from BLE characteristic notifications)
+        bleIpBridge.ip.value?.let { set.add(it) }
+        // 3. Group owner IP (low priority — often the phone itself)
+        groupOwnerIp?.let { set.add(it) }
+        // 4. Known fallback IPs for glasses
+        set.add("192.168.49.80")
+        set.add("192.168.49.79")
+        set.add("192.168.49.2")
+        set.add("192.168.49.3")
+        return set.toList()
     }
 
     private fun mediaConfigOk(ip: String, timeoutMs: Int): Boolean {
@@ -599,11 +614,14 @@ class MediaSyncManager(private val context: Context) {
             val conn = openConnection(URL("http://$ip/files/media.config"))
             conn.connectTimeout = timeoutMs
             conn.readTimeout = timeoutMs
-            conn.requestMethod = "HEAD"
-            val ok = conn.responseCode == HttpURLConnection.HTTP_OK
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
             conn.disconnect()
+            val ok = code == HttpURLConnection.HTTP_OK
+            if (ok) Log.i(TAG, "✓ media.config OK at $ip")
             ok
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "media.config probe $ip failed: ${e.message}")
             false
         }
     }
