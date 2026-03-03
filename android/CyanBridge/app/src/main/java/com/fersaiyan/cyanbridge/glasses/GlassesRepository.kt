@@ -129,20 +129,26 @@ class GlassesRepository private constructor(private val context: Context) {
                         100,
                         object : GlassesDeviceNotifyListener() {
                             override fun parseData(cmdType: Int, response: GlassesDeviceNotifyRsp) {
+                                val data = response.loadData
+                                val hex = data?.joinToString("") { "%02x".format(it) } ?: "null"
                                 Log.i(
                                         TAG,
-                                        "DeviceNotify: cmdType=0x${Integer.toHexString(cmdType)}, loadData size=${response.loadData?.size}"
+                                        "DeviceNotify: cmdType=0x${Integer.toHexString(cmdType)}, size=${data?.size}, hex=$hex"
                                 )
                                 try {
-                                    when (cmdType) {
-                                        0x03 -> {
-                                            if (response.loadData != null &&
-                                                            response.loadData.size > 7 &&
-                                                            response.loadData[7].toInt() == 1
-                                            ) {
-                                                Log.i(TAG, "*** VOICE WAKE EVENT DETECTED ***")
-                                                onVoiceWakeTriggered()
-                                            }
+                                    // cmdType=0x73 is the AI/voice category.
+                                    // Sub-command is at loadData[6], value at loadData[7].
+                                    // bc730200c0800301 → sub=0x03 val=0x01 = voice wake triggered
+                                    if (cmdType == 0x73 && data != null && data.size >= 8) {
+                                        val subCmd = data[6].toInt() and 0xFF
+                                        val value = data[7].toInt() and 0xFF
+                                        Log.i(
+                                                TAG,
+                                                "  0x73 sub=0x${"%02x".format(subCmd)} val=$value"
+                                        )
+                                        if (subCmd == 0x03 && value == 1) {
+                                            Log.i(TAG, "*** VOICE WAKE EVENT DETECTED ***")
+                                            onVoiceWakeTriggered()
                                         }
                                     }
                                 } catch (e: Exception) {
