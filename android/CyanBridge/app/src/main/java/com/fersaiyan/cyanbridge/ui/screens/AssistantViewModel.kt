@@ -14,10 +14,8 @@ import kotlinx.coroutines.launch
  * 语音助手 ViewModel：
  * - 观察 ChatStore 消息列表
  * - 手动输入文字
- * - 消息重播 (Android TTS)
+ * - 消息重播 (阿里云 TTS，带缓存)
  * - 清空历史
- *
- * 注意：ASR 录音由 MainActivity 的 aliyunAsr 统一管理， 语音唤醒和麦克风按钮都通过 MainActivity 路由。
  */
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -29,9 +27,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         ChatEngine.submitUserText(text, ChatSource.TEXT)
     }
 
-    /** 用 Android TTS 朗读一条消息。 */
+    /** 重播消息：有缓存直接播放，否则合成后缓存。 */
     fun replayMessage(message: ChatMessageEntity) {
-        ChatEngine.speakText(message.content)
+        ChatEngine.replayMessage(message)
     }
 
     /** 清空对话历史。 */

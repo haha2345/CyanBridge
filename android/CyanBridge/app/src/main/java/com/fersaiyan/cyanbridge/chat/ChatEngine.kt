@@ -1,12 +1,10 @@
 package com.fersaiyan.cyanbridge.chat
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.speech.tts.TextToSpeech
 import android.util.Log
 import com.fersaiyan.cyanbridge.ai.QwenChatClient
-import java.util.Locale
+import com.fersaiyan.cyanbridge.ui.chat.ChatAudioPlayer
+import com.fersaiyan.cyanbridge.voice.AliyunTtsService
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -18,7 +16,7 @@ import kotlinx.coroutines.launch
  * 语音对话核心引擎：
  * - 统一接收文本（ASR/输入）
  * - 调用大模型（Qwen-Flash）
- * - 使用 Android 系统 TTS 播报
+ * - 使用阿里云 TTS 合成语音并缓存到文件
  * - 写入对话存储
  */
 object ChatEngine {
@@ -27,9 +25,8 @@ object ChatEngine {
 
     private lateinit var repository: ChatRepository
     private lateinit var qwen: QwenChatClient
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private lateinit var ttsService: AliyunTtsService
+    private val audioPlayer = ChatAudioPlayer()
 
     /** 初始化对话引擎（全局单例）。 */
     fun init(context: Context) {
@@ -37,87 +34,8 @@ object ChatEngine {
         ChatStore.init(context.applicationContext)
         repository = ChatRepository()
         qwen = QwenChatClient()
-
-        initTts(context.applicationContext)
-    }
-
-    private var appCtx: Context? = null
-
-    private fun initTts(appContext: Context) {
-        appCtx = appContext
-        // First create a temporary TTS just to list engines
-        val probe =
-                TextToSpeech(appContext) { status ->
-                    Log.i(TAG, "TTS probe status=$status")
-                    val engines = tts?.engines?.map { it.name } ?: emptyList()
-                    Log.i(TAG, "Available TTS engines: $engines")
-                    tts?.shutdown()
-
-                    // Preferred engine order for Chinese support
-                    val preferred =
-                            listOf(
-                                    "com.xiaomi.mibrain.speech", // 小米
-                                    "com.iflytek.speechcloud", // 讯飞
-                                    "com.google.android.tts", // Google
-                                    "com.samsung.SMT", // Samsung
-                                    "com.huawei.hiai", // Huawei
-                            )
-                    val sorted =
-                            preferred.filter { it in engines } + engines.filter { it !in preferred }
-
-                    if (sorted.isEmpty()) {
-                        Log.e(TAG, "No TTS engines found on device!")
-                        return@TextToSpeech
-                    }
-
-                    tryNextEngine(appContext, sorted, 0)
-                }
-        tts = probe
-    }
-
-    private fun tryNextEngine(ctx: Context, engines: List<String>, index: Int) {
-        if (index >= engines.size) {
-            Log.e(TAG, "All TTS engines failed. Device needs a TTS engine installed.")
-            return
-        }
-        val engine = engines[index]
-        Log.i(TAG, "Trying TTS engine [$index/${engines.size}]: $engine")
-
-        tts?.shutdown()
-        tts =
-                TextToSpeech(
-                        ctx,
-                        { status ->
-                            Log.i(TAG, "TTS engine $engine → status=$status")
-                            if (status == TextToSpeech.SUCCESS) {
-                                setupTtsLanguage()
-                            } else {
-                                Log.w(TAG, "Engine $engine failed, trying next...")
-                                mainHandler.postDelayed(
-                                        { tryNextEngine(ctx, engines, index + 1) },
-                                        500
-                                )
-                            }
-                        },
-                        engine
-                )
-    }
-
-    private fun setupTtsLanguage() {
-        val t = tts ?: return
-        // Try Chinese variants, then fall back to device default
-        val result = t.setLanguage(Locale.CHINESE)
-        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-            Log.w(TAG, "Locale.CHINESE not supported (result=$result), trying Locale.CHINA...")
-            val r2 = t.setLanguage(Locale.CHINA)
-            if (r2 == TextToSpeech.LANG_MISSING_DATA || r2 == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Log.w(TAG, "Locale.CHINA not supported, falling back to default")
-                t.setLanguage(Locale.getDefault())
-            }
-        }
-        t.setSpeechRate(1.0f)
-        ttsReady = true
-        Log.i(TAG, "Android TTS ready! lang=${t.voice?.locale}, engine=${t.defaultEngine}")
+        ttsService = AliyunTtsService(context.applicationContext)
+        Log.i(TAG, "ChatEngine initialized with Aliyun TTS")
     }
 
     /** 提交用户文本。 */
@@ -141,27 +59,39 @@ object ChatEngine {
         }
     }
 
-    /** 用 Android TTS 朗读任意文本（用于消息重播）。 */
-    fun speakText(text: String) {
-        Log.i(TAG, "speakText called, ttsReady=$ttsReady, text=${text.take(60)}")
-        if (!ttsReady) {
-            Log.e(TAG, "TTS not ready, cannot speak")
-            return
-        }
-        mainHandler.post {
-            tts?.stop()
-            val result =
-                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
-            Log.i(TAG, "TTS speak result=$result")
+    /**
+     * 播放消息的音频：
+     * - 如果有 audioPath 缓存文件，直接 MediaPlayer 播放
+     * - 如果没有缓存，先调用阿里云 TTS 合成并缓存，再播放
+     */
+    fun replayMessage(message: ChatMessageEntity) {
+        val path = message.audioPath
+        if (!path.isNullOrBlank() && java.io.File(path).exists()) {
+            Log.i(TAG, "replay from cache: $path")
+            audioPlayer.play(path)
+        } else {
+            Log.i(TAG, "replay: no cache, synthesizing for ${message.id}")
+            scope.launch {
+                val audioPath = ttsService.synthesizeToFile(message.content, message.id)
+                if (audioPath != null) {
+                    // Update message with cached audioPath
+                    val updated = message.copy(audioPath = audioPath)
+                    repository.update(updated)
+                    audioPlayer.play(audioPath)
+                    Log.i(TAG, "replay synthesized & cached: $audioPath")
+                } else {
+                    Log.e(TAG, "replay TTS failed for ${message.id}")
+                }
+            }
         }
     }
 
-    /** 停止 TTS 播放。 */
+    /** 停止播放。 */
     fun stopSpeaking() {
-        tts?.stop()
+        audioPlayer.stop()
     }
 
-    /** 调用大模型并生成回复，然后 TTS 播放。 */
+    /** 调用大模型并生成回复，然后 TTS 合成并播放。 */
     private suspend fun generateAssistantReply(userText: String) {
         Log.i(TAG_FLOW, "qwen request text=${userText.take(120)}")
         val reply =
@@ -189,20 +119,25 @@ object ChatEngine {
         }
 
         Log.i(TAG_FLOW, "qwen reply len=${reply.length}")
+        val messageId = UUID.randomUUID().toString()
+
+        // Synthesize TTS audio and cache it
+        val audioPath = ttsService.synthesizeToFile(reply, messageId)
+        Log.i(TAG_FLOW, "tts audioPath=$audioPath")
+
         val assistantMessage =
                 ChatMessageEntity(
-                        id = UUID.randomUUID().toString(),
+                        id = messageId,
                         role = ChatRoles.ASSISTANT,
                         content = reply,
                         createdAt = now,
                         status = ChatStatus.OK,
                         source = ChatSource.SYSTEM,
+                        audioPath = audioPath,
                 )
 
         repository.insert(assistantMessage)
-
-        // Use Android TTS to speak the reply
-        speakText(reply)
+        // ChatPlaybackManager will auto-play since audioPath is set
     }
 
     private const val TAG = "ChatEngine"
