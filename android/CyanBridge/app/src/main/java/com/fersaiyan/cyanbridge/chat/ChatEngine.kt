@@ -38,16 +38,65 @@ object ChatEngine {
         repository = ChatRepository()
         qwen = QwenChatClient()
 
+        initTts(context.applicationContext)
+    }
+
+    private fun initTts(appContext: Context) {
         tts =
-                TextToSpeech(context.applicationContext) { status ->
-                    ttsReady = status == TextToSpeech.SUCCESS
-                    if (ttsReady) {
-                        tts?.language = Locale.CHINESE
-                        Log.i(TAG, "Android TTS initialized")
+                TextToSpeech(appContext) { status ->
+                    Log.i(TAG, "TTS init callback status=$status")
+                    if (status == TextToSpeech.SUCCESS) {
+                        setupTtsLanguage()
                     } else {
-                        Log.e(TAG, "Android TTS init failed: status=$status")
+                        Log.e(
+                                TAG,
+                                "TTS init failed (status=$status), retrying with default engine..."
+                        )
+                        // Retry: sometimes a second init succeeds
+                        mainHandler.postDelayed(
+                                {
+                                    tts?.shutdown()
+                                    tts =
+                                            TextToSpeech(appContext) { retryStatus ->
+                                                Log.i(TAG, "TTS retry callback status=$retryStatus")
+                                                if (retryStatus == TextToSpeech.SUCCESS) {
+                                                    setupTtsLanguage()
+                                                } else {
+                                                    Log.e(
+                                                            TAG,
+                                                            "TTS retry also failed. Check device TTS settings."
+                                                    )
+                                                    // List available engines for diagnostics
+                                                    tts?.engines?.forEach { engine ->
+                                                        Log.i(
+                                                                TAG,
+                                                                "  Available TTS engine: ${engine.name} (${engine.label})"
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                },
+                                1000
+                        )
                     }
                 }
+    }
+
+    private fun setupTtsLanguage() {
+        val t = tts ?: return
+        // Try Chinese variants, then fall back to device default
+        val result = t.setLanguage(Locale.CHINESE)
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            Log.w(TAG, "Locale.CHINESE not supported (result=$result), trying Locale.CHINA...")
+            val r2 = t.setLanguage(Locale.CHINA)
+            if (r2 == TextToSpeech.LANG_MISSING_DATA || r2 == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.w(TAG, "Locale.CHINA not supported, falling back to default")
+                t.setLanguage(Locale.getDefault())
+            }
+        }
+        t.setSpeechRate(1.0f)
+        ttsReady = true
+        Log.i(TAG, "Android TTS ready! lang=${t.voice?.locale}, engine=${t.defaultEngine}")
     }
 
     /** 提交用户文本。 */
