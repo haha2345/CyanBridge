@@ -31,6 +31,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fersaiyan.cyanbridge.chat.ChatMessageEntity
 import com.fersaiyan.cyanbridge.chat.ChatRoles
 import com.fersaiyan.cyanbridge.chat.ChatStatus
+import com.fersaiyan.cyanbridge.ui.accessibility.isBlindMode
 import com.fersaiyan.cyanbridge.ui.theme.CyanPrimary
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -149,6 +150,7 @@ fun AssistantScreen(assistantVm: AssistantViewModel = viewModel()) {
 private fun ChatBubble(message: ChatMessageEntity, onReplay: (ChatMessageEntity) -> Unit) {
         val isUser = message.role == ChatRoles.USER
         val isError = message.status == ChatStatus.ERROR
+        val blind = isBlindMode()
         val timeStr =
                 remember(message.createdAt) {
                         SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -161,16 +163,18 @@ private fun ChatBubble(message: ChatMessageEntity, onReplay: (ChatMessageEntity)
                 verticalAlignment = Alignment.Bottom
         ) {
                 if (!isUser) {
-                        // Replay button for AI messages
+                        // Replay button for AI messages (larger in blind mode)
+                        val btnSize = if (blind) 48.dp else 32.dp
+                        val iconSize = if (blind) 28.dp else 18.dp
                         IconButton(
                                 onClick = { onReplay(message) },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(btnSize)
                         ) {
                                 Icon(
                                         Icons.AutoMirrored.Filled.VolumeUp,
                                         contentDescription = "重放此消息",
-                                        modifier = Modifier.size(18.dp),
-                                        tint = CyanPrimary
+                                        modifier = Modifier.size(iconSize),
+                                        tint = MaterialTheme.colorScheme.primary
                                 )
                         }
                 }

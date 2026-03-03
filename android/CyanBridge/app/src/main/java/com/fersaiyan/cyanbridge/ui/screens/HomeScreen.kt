@@ -28,6 +28,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fersaiyan.cyanbridge.glasses.GlassesRepository
 import com.fersaiyan.cyanbridge.glasses.GlassesViewModel
+import com.fersaiyan.cyanbridge.ui.accessibility.LargeTouchButton
+import com.fersaiyan.cyanbridge.ui.accessibility.isBlindMode
 import com.fersaiyan.cyanbridge.ui.theme.CyanDark
 import com.fersaiyan.cyanbridge.ui.theme.CyanPrimary
 
@@ -45,20 +47,76 @@ fun HomeScreen(glassesVm: GlassesViewModel = viewModel()) {
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Show snackbar for action results
     LaunchedEffect(actionResult) {
         actionResult?.let {
             snackbarHostState.showSnackbar(it)
             glassesVm.clearActionResult()
         }
     }
-
-    // Refresh on composition
     LaunchedEffect(Unit) { glassesVm.refreshState() }
 
     val isVideoRecording = glassesMode == GlassesRepository.GlassesMode.VIDEO_RECORDING
     val isAudioRecording = glassesMode == GlassesRepository.GlassesMode.AUDIO_RECORDING
+    val blind = isBlindMode()
 
+    // ── Blind mode: simplified single-column layout ──
+    if (blind) {
+        Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                    text = "CyanBridge",
+                    style =
+                            MaterialTheme.typography.headlineLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                            ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.semantics { contentDescription = "CyanBridge 盲人智能眼镜助手" }
+            )
+            // Connection status
+            val connStatus =
+                    if (isConnected) "已连接：${deviceName ?: "眼镜"}，电量${batteryLevel ?: "未知"}%"
+                    else if (isConnecting) "正在连接..." else "未连接"
+            LargeTouchButton(
+                    icon = Icons.Filled.Bluetooth,
+                    title = if (isConnected) "眼镜已连接" else "连接眼镜",
+                    description = connStatus,
+                    onClick = { if (!isConnected) glassesVm.onConnectTapped() },
+            )
+            LargeTouchButton(
+                    icon = Icons.Filled.CameraAlt,
+                    title = "拍照",
+                    description = "控制眼镜拍照",
+                    onClick = { if (isConnected) glassesVm.takePhoto() },
+            )
+            LargeTouchButton(
+                    icon = if (isVideoRecording) Icons.Filled.Stop else Icons.Filled.Videocam,
+                    title = if (isVideoRecording) "停止录像" else "录像",
+                    description = if (isVideoRecording) "点击停止" else "控制眼镜录像",
+                    onClick = { if (isConnected) glassesVm.toggleVideoRecording() },
+            )
+            LargeTouchButton(
+                    icon = if (isAudioRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                    title = if (isAudioRecording) "停止录音" else "录音",
+                    description = if (isAudioRecording) "点击停止" else "控制眼镜录音",
+                    onClick = { if (isConnected) glassesVm.toggleAudioRecording() },
+            )
+            LargeTouchButton(
+                    icon = Icons.Filled.Translate,
+                    title = "翻译",
+                    description = "同声传译功能",
+                    onClick = { /* TODO */},
+            )
+        }
+
+        if (showScanDialog) {
+            BleScanDialog(viewModel = glassesVm, onDismiss = { glassesVm.onScanDialogDismissed() })
+        }
+        return
+    }
+
+    // ── Normal mode ──
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),

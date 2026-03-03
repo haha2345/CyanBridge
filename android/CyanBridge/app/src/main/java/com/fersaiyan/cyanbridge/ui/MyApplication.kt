@@ -37,6 +37,7 @@ class MyApplication : Application() {
         instance = this
         CONTEXT = applicationContext
         initBle()
+        com.fersaiyan.cyanbridge.ui.accessibility.AccessibilityPrefs.init(this)
         com.fersaiyan.cyanbridge.chat.ChatEngine.init(this)
         // Global auto-play for assistant replies (works even outside ChatActivity).
         com.fersaiyan.cyanbridge.chat.ChatPlaybackManager.start()

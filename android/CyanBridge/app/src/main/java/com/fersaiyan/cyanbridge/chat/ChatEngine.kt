@@ -86,6 +86,17 @@ object ChatEngine {
         }
     }
 
+    /** 短文本语音引导（页面切换等），不保存文件。 直接调用 TTS 合成并播放临时文件。 */
+    fun replayVoiceGuide(text: String) {
+        scope.launch {
+            val id = "guide_${System.currentTimeMillis()}"
+            val path = ttsService.synthesizeToFile(text, id)
+            if (path != null) {
+                audioPlayer.play(path)
+            }
+        }
+    }
+
     /** 停止播放。 */
     fun stopSpeaking() {
         audioPlayer.stop()
