@@ -1,253 +1,172 @@
-# HeyCyan Glasses SDK
+# CyanBridge — 盲人智能眼镜助手 🕶️
 
-Comprehensive SDKs for controlling HeyCyan smart glasses via Bluetooth Low Energy (BLE).
+> 基于 HeyCyan 智能眼镜 SDK 的开源替代 App，专为视障人士设计
 
-## Platform Support
+[![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](android/CyanBridge)
+[![Kotlin](https://img.shields.io/badge/Kotlin_2.0-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](android/CyanBridge)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](android/CyanBridge)
 
-- **iOS**: Full SDK available with demo application (see `ios/` directory)
-- **Android**: Full SDK available with demo application (see `android/` directory)
-- **Gemini/ChatGPT assistants**: Supported on **Android only** (via the Android sample app + Tasker automation)
+---
 
-## Overview
+## 项目简介
 
-This repository provides SDKs for developers to integrate HeyCyan smart glasses functionality into their applications. The glasses support photo capture, video recording, audio recording, and AI-powered image generation.
+CyanBridge 是一款为 **HeyCyan 智能眼镜** 开发的开源替代 Android App。相比官方 App，CyanBridge 专注于 **无障碍体验** 和 **开源 AI 集成**，致力于帮助视障用户通过智能眼镜更好地感知世界。
 
-## AI Assistants (Android Only)
+### 核心特性
 
-The Android sample app includes an optional integration to route assistant requests (e.g. Gemini or ChatGPT workflows) through Android automation.
+| 功能               | 说明                           | 状态     |
+| ------------------ | ------------------------------ | -------- |
+| 🔗 **眼镜连接管理** | BLE 扫描、配对、连接、电量监控 | ✅ 已实现 |
+| 🎙️ **语音助手**     | 语音唤醒 → ASR → AI 对话 → TTS | ✅ 已实现 |
+| 📸 **媒体管理**     | 照片/视频/录音 拍摄与下载      | ✅ 已实现 |
+| 🌐 **同声传译**     | 实时语音翻译（140+ 语言）      | 🚧 开发中 |
+| 👁️ **场景描述**     | AI 看图说话，描述周围环境      | ✅ MVP    |
+| 👤 **面部描述**     | 描述面前人物的外貌特征         | 📋 计划中 |
+| ♿ **无障碍 UI**    | 全盲/半盲双模式，TalkBack 适配 | 🚧 开发中 |
 
-- **Android-only**: Gemini/ChatGPT assistant workflows are only supported on Android.
-- **Image queries require Tasker**: For image queries specifically, the app forwards the request to **Tasker** (paid automation app). You must have Tasker installed and the provided Tasker profile enabled.
-- **AutoInput required**: The Tasker automation relies on **Tasker AutoInput** (paid Tasker plugin) to drive the assistant UI.
+---
 
-### Install The Tasker Profile (.xml)
+## 技术架构
 
-The Tasker profile will be provided in two places: this repo and TaskerNet.
-
-Option A: Import from TaskerNet (recommended)
-
-1. Install Tasker from Google Play.
-2. Open this TaskerNet link on your phone and import the profile:
-   - `https://taskernet.com/shares/?id=PLACEHOLDER_TASKERNET_LINK`
-3. In Tasker, ensure the imported profile is **enabled**.
-
-Option B: Import the .xml from this repository
-
-1. Download the profile XML to your phone:
-   - `tasker/HeyCyan_ImageQuery_Assistant.xml` (placeholder path)
-2. In Tasker, use the import feature (commonly: Menu > Data > Import) and select the downloaded `.xml`.
-3. Ensure the imported profile is **enabled**.
-
-## Features
-
-### Device Management
-- **Bluetooth LE Scanning**: Discover nearby HeyCyan glasses
-- **Connection Management**: Connect/disconnect and manage device state
-- **Device Information**: Retrieve hardware/firmware versions and MAC address
-
-### Media Controls
-- **Photo Capture**: Remote shutter control for taking photos
-- **Video Recording**: Start/stop video recording with status tracking
-- **Audio Recording**: Start/stop audio recording with status tracking
-- **AI Image Generation**: Trigger AI-powered image creation and receive generated images
-
-### Device Monitoring
-- **Battery Status**: Real-time battery level and charging state
-- **Media Counts**: Track number of photos, videos, and audio files on device
-- **Time Synchronization**: Set device time to match iOS device
-
-
-## Requirements
-
-### iOS
-
-- iOS 11.0+
-- Xcode 12.0+
-- Swift 5.0+ or Objective-C
-- Physical iOS device (Bluetooth not supported in simulator)
-
-### Android
-
-- Android Studio (latest stable recommended)
-- Android device with BLE
-
-## Installation
-
-### iOS
-
-1. Clone or download this repository
-2. Open `QCSDKDemo.xcodeproj` in Xcode
-3. Build and run on a physical iOS device
-
-### Android
-
-1. Clone or download this repository
-2. Open `android/` in Android Studio
-3. Build and run the sample app (see `android/CyanBridge/`)
-
-## Usage
-
-### Basic Implementation
-
-1. **Import the SDK**
-```objc
-#import <QCSDK/QCSDK.h>
+```
+CyanBridge App
+├── UI Layer (Jetpack Compose + Material3)
+│   ├── 首页 — 眼镜连接状态 + 快捷操作
+│   ├── 助手 — 语音对话 + AI 回复
+│   ├── 媒体 — 照片/视频/录音管理
+│   └── 设置 — 无障碍/设备/账户
+├── Domain Layer
+│   ├── Voice Pipeline (ASR → LLM → TTS)
+│   ├── Translation Engine
+│   └── Vision Understanding
+├── Data Layer
+│   ├── BLE Manager (HeyCyan SDK)
+│   ├── WiFi P2P (媒体传输)
+│   └── API Clients (Aliyun / DashScope)
+└── SDK (glasses_sdk.aar)
 ```
 
-2. **Initialize SDK Manager**
-```objc
-[QCSDKManager shareInstance].delegate = self;
+### 技术栈
+
+| 层级     | 技术                                             |
+| -------- | ------------------------------------------------ |
+| **UI**   | Jetpack Compose + Material3 + Navigation Compose |
+| **语音** | 阿里云 NUI ASR + 阿里云 NLS TTS                  |
+| **AI**   | DashScope (Qwen) / OpenAI 兼容 API               |
+| **通信** | HeyCyan BLE SDK + WiFi P2P                       |
+| **架构** | MVVM + Kotlin Coroutines + Flow                  |
+
+---
+
+## 开发路线图
+
+### ✅ Phase 0 — APK 逆向分析
+- 反编译官方 APK，分析同声传译 / 意图分类 / 语音管线实现
+- 产出 [逆向分析报告](android/APK_REVERSE_ENGINEERING_FULL.md)
+
+### ✅ Phase 1 — Compose 架构重构
+- Kotlin 2.0 + Jetpack Compose + Navigation Component
+- 4 页底部导航（首页/助手/媒体/设置）
+- Material3 主题 + 无障碍语义标签
+
+### 🚧 Phase 2 — 无障碍 UI 深化
+- 全盲模式（超大触控区 + 语音引导）
+- 半盲模式（高对比度 + 大字体）
+- TalkBack 全链路适配
+
+### 📋 Phase 3 — 翻译功能
+- 基于 Qwen 大模型的同声传译
+- 翻译历史 + 语言自动识别
+- 离线缓存 + 低延迟播放
+
+### 📋 Phase 4 — 视觉理解
+- 场景描述 + 物体识别 + 文字读取
+- 面部描述（大模型推理）
+- 物体相对位置描述
+
+### 📋 Phase 5 — 用户系统
+- 本地 Mock → 手机号登录
+- 会员体系 + API 配额管理
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Android Studio Ladybug+ (2024.2+)
+- JDK 17+
+- Android 设备（BLE 支持）
+- HeyCyan 智能眼镜
+
+### 构建运行
+
+```bash
+git clone https://github.com/FerSaiyan/Alternative-HeyCyan-App-and-SDK.git
+cd Alternative-HeyCyan-App-and-SDK/android/CyanBridge
 ```
 
-3. **Scan for Devices**
-```objc
-[[QCCentralManager shared] scan];
+在 `local.properties` 中配置 API Keys：
+
+```properties
+# AI 对话（二选一）
+OPENAI_API_KEY=sk-xxx
+OPENAI_BASE_URL=https://api.openai.com
+
+# 阿里云语音
+ALIYUN_ASR_APPKEY=xxx
+ALIYUN_ASR_TOKEN=xxx
+
+# 阿里云视觉理解
+DASHSCOPE_API_KEY=sk-xxx
 ```
 
-4. **Connect to Device**
-```objc
-[[QCCentralManager shared] connect:peripheral];
+用 Android Studio 打开项目，Build & Run。
+
+---
+
+## 项目结构
+
+```
+.
+├── android/
+│   ├── CyanBridge/           # 主 App 项目
+│   │   ├── app/src/main/java/com/fersaiyan/cyanbridge/
+│   │   │   ├── ui/           # Compose UI (screens, navigation, theme)
+│   │   │   ├── voice/        # 语音管线 (ASR, TTS, Voice Chat)
+│   │   │   ├── chat/         # AI 对话引擎
+│   │   │   └── MainActivity  # 旧版 XML UI (兼容保留)
+│   │   └── app/libs/         # HeyCyan BLE SDK (.aar)
+│   ├── APK_REVERSE_ENGINEERING_FULL.md  # 官方 APK 逆向分析
+│   └── VOICE_AI_PIPELINE_FROM_OFFICIAL_APK.md  # 语音管线分析
+├── ios/                      # iOS SDK (官方原版)
+├── QCSDK.framework/          # iOS BLE SDK
+└── README.md
 ```
 
-5. **Control Device**
-```objc
-// Take a photo
-[QCSDKCmdCreator setDeviceMode:QCOperatorDeviceModePhoto 
-                       success:^{ NSLog(@"Photo taken"); } 
-                          fail:^(NSInteger mode) { NSLog(@"Failed"); }];
+---
 
-// Get battery status
-[QCSDKCmdCreator getDeviceBattery:^(NSInteger battery, BOOL charging) {
-    NSLog(@"Battery: %ld%%, Charging: %@", battery, charging ? @"YES" : @"NO");
-} fail:^{ NSLog(@"Failed to get battery"); }];
-```
+## 相关文档
 
-## API Reference
+- [官方 APK 逆向分析报告](android/APK_REVERSE_ENGINEERING_FULL.md) — 翻译/意图分类/语音管线完整分析
+- [语音 AI 管线文档](android/VOICE_AI_PIPELINE_FROM_OFFICIAL_APK.md) — ASR→LLM→TTS 完整流程
+- [Android SDK 开发指南](android/Android_SDK_Development_Guide_CN.pdf) — 官方 BLE SDK 文档
 
-### QCSDKManager
-- Singleton instance for SDK management
-- Handles device data updates via delegate callbacks
+---
 
-### QCSDKCmdCreator
-Key methods:
-- `getDeviceVersionInfo` - Get hardware/firmware versions
-- `getDeviceMacAddress` - Get device MAC address
-- `setupDeviceDateTime` - Sync device time
-- `getDeviceBattery` - Get battery level and charging status
-- `getDeviceMedia` - Get media file counts
-- `setDeviceMode` - Control device operations (photo/video/audio)
+## 分支说明
 
-### Device Modes
-- `QCOperatorDeviceModePhoto` - Take photo
-- `QCOperatorDeviceModeVideo` - Start video recording
-- `QCOperatorDeviceModeVideoStop` - Stop video recording
-- `QCOperatorDeviceModeAudio` - Start audio recording
-- `QCOperatorDeviceModeAudioStop` - Stop audio recording
-- `QCOperatorDeviceModeAIPhoto` - Generate AI image
+| 分支                    | 说明                                     |
+| ----------------------- | ---------------------------------------- |
+| `main`                  | 当前开发分支，包含 CyanBridge App 和改进 |
+| `manufacturer-original` | 厂商原版 SDK（未修改基线）               |
 
-## Demo App
+## 许可
 
-The included demo application demonstrates all SDK features:
+本项目中的 HeyCyan BLE SDK (`.aar` / `.framework`) 为厂商私有协议。  
+CyanBridge App 代码为开源项目，欢迎贡献。
 
-1. **Search Screen**: Scan and list available devices
-2. **Feature Screen**: Control connected device with options for:
-   - Version information retrieval
-   - Time synchronization
-   - Battery status monitoring
-   - Media count tracking
-   - Photo/video/audio capture
-   - AI image generation
+## 致谢
 
-## Permissions
-
-Add to your app's `Info.plist`:
-```xml
-<key>NSBluetoothAlwaysUsageDescription</key>
-<string>This app needs Bluetooth to connect to HeyCyan glasses</string>
-<key>NSBluetoothPeripheralUsageDescription</key>
-<string>This app needs Bluetooth to communicate with HeyCyan glasses</string>
-```
-
-## Proprietary Protocol Information
-
-This SDK encapsulates the proprietary BLE communication protocol for HeyCyan glasses. Without this SDK, developers would need to reverse-engineer the following:
-
-### BLE Service & Characteristic UUIDs (Found in Binary)
-- **Primary Service UUID**: `7905FFF0-B5CE-4E99-A40F-4B1E122D00D0`
-- **Secondary Service UUID**: `6e40fff0-b5a3-f393-e0a9-e50e24dcca9e`
-- **QCSDKSERVERUUID1**: Internal service identifier
-- **QCSDKSERVERUUID2**: Internal service identifier
-- **Command Characteristic**: Write characteristic for device commands
-- **Notification Characteristic**: For receiving device responses and status updates
-- **Data Transfer Characteristic**: For large data transfers (AI images)
-
-### Command Protocol Structure
-Each command follows a specific byte format:
-- **Header**: Command identifier bytes
-- **Payload**: Command-specific data
-- **Checksum**: Validation bytes
-- **Acknowledgment**: Required response format
-
-### Key Command Sequences (Examples)
-- **Take Photo**: `QCOperatorDeviceModePhoto` command with specific byte encoding
-- **Battery Status**: Request/response with battery level (0-100) and charging flag
-- **AI Image Transfer**: `QCOperatorDeviceModeAIPhoto` triggers multi-packet protocol
-- **Version Info**: Returns hardware version, firmware version, WiFi hardware/firmware versions
-- **Media Counts**: Returns photo count, video count, audio count as integers
-- **Video Control**: `QCOperatorDeviceModeVideo` / `QCOperatorDeviceModeVideoStop`
-- **Audio Control**: `QCOperatorDeviceModeAudio` / `QCOperatorDeviceModeAudioStop`
-
-### Authentication & Handshake
-- Initial pairing sequence
-- Session establishment protocol
-- Keep-alive requirements
-- Disconnection handling
-
-### Data Encoding Formats
-- **Battery Level**: NSInteger (0-100) with BOOL charging flag
-- **Media Counts**: NSInteger values for photo, video, audio counts
-- **Timestamp Format**: Uses iOS device time via `setupDeviceDateTime`
-- **Image Data**: NSData chunks received via `didReceiveAIChatImageData` delegate
-- **MAC Address**: String format returned by `getDeviceMacAddress`
-- **Version Strings**: Multiple version fields (hardware, firmware, WiFi versions)
-
-### State Management
-- **Connection States**: `QCStateUnbind`, `QCStateConnecting`, `QCStateConnected`, `QCStateDisconnecting`, `QCStateDisconnected`
-- **Bluetooth States**: Via `QCBluetoothState` enum
-- **Recording States**: Tracked via `recordingVideo` and `recordingAudio` flags
-- **Mode Restrictions**: Cannot record video and audio simultaneously
-- **Delegate Callbacks**: `QCSDKManagerDelegate` for battery, media updates, AI image data
-- **Error Handling**: Fail blocks return current device mode on mode switch failures
-
-Without this SDK, implementing device communication would require:
-1. BLE packet sniffing during device operations
-2. Reverse-engineering command structures through trial and error
-3. Implementing proper error handling for undocumented states
-4. Managing complex multi-packet data transfers
-5. Handling device-specific quirks and timing requirements
-
-## Troubleshooting
-
-- **Cannot find devices**: Ensure Bluetooth is enabled and glasses are in pairing mode
-- **Connection fails**: Check if glasses are already connected to another device
-- **Commands fail**: Ensure device is connected and not in use by another operation
-
-## License
-
-This SDK is proprietary software. Contact HeyCyan for licensing information.
-
-## Branches
-
-- **`main`** - Current development branch with improvements and modifications
-- **`manufacturer-original`** - Preserved original SDK from manufacturer (unmodified baseline)
-
-## Additional Documentation
-
-For more detailed technical information, see our GitHub issues:
-
-- **[Issue #1: Convert Objective-C SDK to Swift Library](https://github.com/ebowwa/HeyCyanGlassesSDK/issues/1)** - Comprehensive guide for creating a modern Swift wrapper with async/await, Combine, and SwiftUI support
-- **[Issue #2: Complete Device I/O Documentation](https://github.com/ebowwa/HeyCyanGlassesSDK/issues/2)** - Exhaustive documentation of every input/output operation with exact code examples and expected responses
-
-## Support
-
-For technical support or questions about the SDK, please contact the HeyCyan development team.
+- [HeyCyan / Cyan Glasses](https://www.qlifesnap.com) — 智能眼镜硬件
+- [ebowwa/HeyCyanGlassesSDK](https://github.com/ebowwa/HeyCyanGlassesSDK) — 原始 SDK 文档整理

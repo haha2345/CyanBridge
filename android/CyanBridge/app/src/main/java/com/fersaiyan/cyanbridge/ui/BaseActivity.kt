@@ -1,42 +1,37 @@
 package com.fersaiyan.cyanbridge.ui
+
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
-import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.fersaiyan.cyanbridge.R
 import java.lang.ref.WeakReference
+
 open class BaseActivity : AppCompatActivity() {
 
-    /**
-     * Whether the current Activity is in the foreground.
-     */
+    /** Whether the current Activity is in the foreground. */
     private var isActive: Boolean = false
 
-    /**
-     * The instance of the current Activity.
-     */
+    /** The instance of the current Activity. */
     protected var activity: Activity? = null
 
     /** Weak reference to the current Activity to prevent memory leaks */
     private var activityWR: WeakReference<Activity>? = null
 
-
-    /**
-     * Log output tag
-     */
+    /** Log output tag */
     protected val TAG: String = this.javaClass.simpleName
 
-    private val handler: Handler = object : Handler(Looper.getMainLooper()) {
-        override fun handleMessage(msg: Message) {
-            super.handleMessage(msg)
-        }
-    }
+    private val handler: Handler =
+            object : Handler(Looper.getMainLooper()) {
+                override fun handleMessage(msg: Message) {
+                    super.handleMessage(msg)
+                }
+            }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,7 +48,7 @@ open class BaseActivity : AppCompatActivity() {
         super.onRestoreInstanceState(savedInstanceState)
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
     }
 
@@ -84,13 +79,8 @@ open class BaseActivity : AppCompatActivity() {
         activity = null
     }
 
-    override fun setContentView(layoutResID: Int) {
-        super.setContentView(layoutResID)
-        setupViews()
-    }
-
-    override fun setContentView(layoutView: View) {
-        super.setContentView(layoutView)
+    override fun onContentChanged() {
+        super.onContentChanged()
         setupViews()
     }
 
@@ -100,7 +90,4 @@ open class BaseActivity : AppCompatActivity() {
         navigateBefore?.setOnClickListener { finish() }
         tvTitle?.isSelected = true
     }
-
-
-
 }
