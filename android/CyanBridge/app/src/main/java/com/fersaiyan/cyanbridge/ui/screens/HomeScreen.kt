@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.fersaiyan.cyanbridge.glasses.GlassesRepository
 import com.fersaiyan.cyanbridge.glasses.GlassesViewModel
 import com.fersaiyan.cyanbridge.ui.accessibility.LargeTouchButton
@@ -34,7 +35,7 @@ import com.fersaiyan.cyanbridge.ui.theme.CyanDark
 import com.fersaiyan.cyanbridge.ui.theme.CyanPrimary
 
 @Composable
-fun HomeScreen(glassesVm: GlassesViewModel = viewModel()) {
+fun HomeScreen(glassesVm: GlassesViewModel = viewModel(), navController: NavController? = null) {
 
     val isConnected by glassesVm.isConnected.collectAsState()
     val isConnecting by glassesVm.isConnecting.collectAsState()
@@ -106,7 +107,7 @@ fun HomeScreen(glassesVm: GlassesViewModel = viewModel()) {
                     icon = Icons.Filled.Translate,
                     title = "翻译",
                     description = "同声传译功能",
-                    onClick = { /* TODO */},
+                    onClick = { navController?.navigate("translate") },
             )
         }
 
@@ -213,8 +214,8 @@ fun HomeScreen(glassesVm: GlassesViewModel = viewModel()) {
                         icon = Icons.Filled.Translate,
                         title = "翻译",
                         description = "同声传译功能",
-                        enabled = isConnected,
-                        onClick = { /* TODO */}
+                        enabled = true,
+                        onClick = { navController?.navigate("translate") }
                 )
             }
         }

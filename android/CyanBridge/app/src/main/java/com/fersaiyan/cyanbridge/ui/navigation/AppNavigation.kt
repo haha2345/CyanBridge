@@ -28,6 +28,7 @@ import com.fersaiyan.cyanbridge.ui.screens.AssistantScreen
 import com.fersaiyan.cyanbridge.ui.screens.HomeScreen
 import com.fersaiyan.cyanbridge.ui.screens.MediaScreen
 import com.fersaiyan.cyanbridge.ui.screens.SettingsScreen
+import com.fersaiyan.cyanbridge.ui.screens.TranslateScreen
 
 /** Bottom navigation destinations. */
 sealed class Screen(
@@ -96,40 +97,45 @@ fun AppNavigation() {
             }
         }
     }
+    // Hide bottom bar on translate page
+    val showBottomBar = currentRoute != "translate"
 
     Scaffold(
             bottomBar = {
-                NavigationBar {
-                    bottomNavItems.forEach { screen ->
-                        val selected =
-                                currentDestination?.hierarchy?.any { it.route == screen.route } ==
-                                        true
+                if (showBottomBar) {
+                    NavigationBar {
+                        bottomNavItems.forEach { screen ->
+                            val selected =
+                                    currentDestination?.hierarchy?.any {
+                                        it.route == screen.route
+                                    } == true
 
-                        NavigationBarItem(
-                                selected = selected,
-                                onClick = {
-                                    navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
+                            NavigationBarItem(
+                                    selected = selected,
+                                    onClick = {
+                                        navController.navigate(screen.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
                                         }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = {
-                                    Icon(
-                                            imageVector =
-                                                    if (selected) screen.selectedIcon
-                                                    else screen.unselectedIcon,
-                                            contentDescription = screen.contentDesc
-                                    )
-                                },
-                                label = { Text(screen.label) },
-                                modifier =
-                                        Modifier.semantics {
-                                            contentDescription = screen.contentDesc
-                                        }
-                        )
+                                    },
+                                    icon = {
+                                        Icon(
+                                                imageVector =
+                                                        if (selected) screen.selectedIcon
+                                                        else screen.unselectedIcon,
+                                                contentDescription = screen.contentDesc
+                                        )
+                                    },
+                                    label = { Text(screen.label) },
+                                    modifier =
+                                            Modifier.semantics {
+                                                contentDescription = screen.contentDesc
+                                            }
+                            )
+                        }
                     }
                 }
             }
@@ -139,10 +145,11 @@ fun AppNavigation() {
                 startDestination = Screen.Home.route,
                 modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Home.route) { HomeScreen() }
+            composable(Screen.Home.route) { HomeScreen(navController = navController) }
             composable(Screen.Assistant.route) { AssistantScreen() }
             composable(Screen.Media.route) { MediaScreen() }
             composable(Screen.Settings.route) { SettingsScreen() }
+            composable("translate") { TranslateScreen(onBack = { navController.popBackStack() }) }
         }
     }
 }
