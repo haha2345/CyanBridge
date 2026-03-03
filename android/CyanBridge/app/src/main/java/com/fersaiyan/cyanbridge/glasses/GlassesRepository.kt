@@ -98,9 +98,45 @@ class GlassesRepository private constructor(private val context: Context) {
             val name = DeviceManager.getInstance().deviceName
             _deviceName.value = name
             requestBattery()
+            syncAiVoiceWake()
         } else {
             _batteryLevel.value = null
             _isCharging.value = null
+        }
+    }
+
+    // ── Voice Wake ───────────────────────────────────────────
+
+    private fun syncAiVoiceWake() {
+        if (!BleOperateManager.getInstance().isConnected) return
+        Log.i(TAG, "Querying aiVoiceWake status...")
+        LargeDataHandler.getInstance().aiVoiceWake(false, false) { _, rsp ->
+            val isOpen =
+                    try {
+                        rsp?.javaClass
+                                ?.getDeclaredField("isOpen")
+                                ?.apply { isAccessible = true }
+                                ?.getBoolean(rsp)
+                                ?: false
+                    } catch (_: Exception) {
+                        false
+                    }
+            Log.i(TAG, "aiVoiceWake query: isOpen=$isOpen")
+            if (!isOpen) {
+                LargeDataHandler.getInstance().aiVoiceWake(true, true) { _, rsp2 ->
+                    val isOpen2 =
+                            try {
+                                rsp2?.javaClass
+                                        ?.getDeclaredField("isOpen")
+                                        ?.apply { isAccessible = true }
+                                        ?.getBoolean(rsp2)
+                                        ?: false
+                            } catch (_: Exception) {
+                                false
+                            }
+                    Log.i(TAG, "aiVoiceWake set(true): isOpen=$isOpen2")
+                }
+            }
         }
     }
 
