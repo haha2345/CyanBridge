@@ -601,10 +601,58 @@ private fun QuickActionCard(
         isActive: Boolean = false,
         onClick: () -> Unit
 ) {
+    // Blinking dot animation for recording state
+    val infiniteTransition = rememberInfiniteTransition(label = "recording")
+    val dotAlpha by
+            infiniteTransition.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 0.2f,
+                    animationSpec =
+                            infiniteRepeatable(
+                                    animation = tween(600, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Reverse
+                            ),
+                    label = "dot_blink"
+            )
+    val borderAlpha by
+            infiniteTransition.animateFloat(
+                    initialValue = 0.15f,
+                    targetValue = 0.4f,
+                    animationSpec =
+                            infiniteRepeatable(
+                                    animation = tween(1000, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                            ),
+                    label = "border_pulse"
+            )
+
+    // Elapsed time counter
+    var elapsedSeconds by remember { mutableIntStateOf(0) }
+    LaunchedEffect(isActive) {
+        elapsedSeconds = 0
+        if (isActive) {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                elapsedSeconds++
+            }
+        }
+    }
+
     Card(
             onClick = onClick,
             modifier =
-                    modifier.height(80.dp).semantics { contentDescription = "$title，$description" },
+                    modifier.height(80.dp)
+                            .then(
+                                    if (isActive)
+                                            Modifier.background(
+                                                    MaterialTheme.colorScheme.error.copy(
+                                                            alpha = borderAlpha
+                                                    ),
+                                                    RoundedCornerShape(16.dp)
+                                            )
+                                    else Modifier
+                            )
+                            .semantics { contentDescription = "$title，$description" },
             shape = RoundedCornerShape(16.dp),
             enabled = enabled,
             colors =
@@ -619,45 +667,82 @@ private fun QuickActionCard(
                     )
     ) {
         Row(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
         ) {
             if (icon != null) {
-                Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint =
-                                when {
-                                    !enabled ->
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                    isActive -> MaterialTheme.colorScheme.error
-                                    else -> CyanPrimary
-                                }
-                )
-                Spacer(modifier = Modifier.width(12.dp))
+                // Icon with blinking effect when recording
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint =
+                                    when {
+                                        !enabled ->
+                                                MaterialTheme.colorScheme.onSurface.copy(
+                                                        alpha = 0.4f
+                                                )
+                                        isActive ->
+                                                MaterialTheme.colorScheme.error.copy(
+                                                        alpha = dotAlpha
+                                                )
+                                        else -> CyanPrimary
+                                    }
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
             }
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Blinking red dot when recording
+                    if (isActive) {
+                        Box(
+                                modifier =
+                                        Modifier.size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                        MaterialTheme.colorScheme.error.copy(
+                                                                alpha = dotAlpha
+                                                        )
+                                                )
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                            text = title,
+                            style =
+                                    MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.SemiBold
+                                    ),
+                            color =
+                                    when {
+                                        !enabled ->
+                                                MaterialTheme.colorScheme.onSurface.copy(
+                                                        alpha = 0.4f
+                                                )
+                                        isActive -> MaterialTheme.colorScheme.error
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    }
+                    )
+                }
                 Text(
-                        text = title,
-                        style =
-                                MaterialTheme.typography.titleSmall.copy(
-                                        fontWeight = FontWeight.SemiBold
-                                ),
-                        color =
-                                when {
-                                    !enabled ->
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                    isActive -> MaterialTheme.colorScheme.error
-                                    else -> MaterialTheme.colorScheme.onSurface
-                                }
-                )
-                Text(
-                        text = description,
+                        text =
+                                if (isActive) {
+                                    val min = elapsedSeconds / 60
+                                    val sec = elapsedSeconds % 60
+                                    String.format("%02d:%02d", min, sec)
+                                } else description,
                         style = MaterialTheme.typography.bodySmall,
                         color =
-                                if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                when {
+                                    isActive -> MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                                    enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    else ->
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                    alpha = 0.4f
+                                            )
+                                }
                 )
             }
         }
