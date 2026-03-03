@@ -219,8 +219,17 @@ class AliyunAsrWakeSession(
                 Log.i(TAG, "ASR partial: $partial")
             }
             Constants.NuiEvent.EVENT_ASR_RESULT -> {
-                val text = asrResult?.asrResult?.trim().orEmpty()
-                Log.i(TAG, "ASR FINAL result raw: $text")
+                val raw = asrResult?.asrResult?.trim().orEmpty()
+                Log.i(TAG, "ASR FINAL result raw: $raw")
+                // Extract actual text from {"payload":{"result":"识别文本"}}
+                val text =
+                        try {
+                            val json = org.json.JSONObject(raw)
+                            json.optJSONObject("payload")?.optString("result", "") ?: raw
+                        } catch (_: Exception) {
+                            raw // Fallback to raw if not JSON
+                        }
+                Log.i(TAG, "ASR extracted text: $text")
                 if (text.isNotBlank()) {
                     mainHandler.post { onResult(text) }
                 } else {
