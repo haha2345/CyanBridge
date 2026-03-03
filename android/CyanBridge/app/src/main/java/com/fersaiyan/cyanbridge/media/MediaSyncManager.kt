@@ -167,12 +167,49 @@ class MediaSyncManager(private val context: Context) {
 
     // ── P2P + Download Flow ──
 
+    @Volatile private var glassesP2pName: String? = null
+
     private suspend fun startP2pAndDownload() {
         val wifiP2pManager = WifiP2pManagerSingleton.getInstance(context)
         wifiP2pManager.resetFailCount()
         wifiP2pManager.registerReceiver()
 
-        val p2pReady = CompletableDeferred<String>() // will complete with device IP
+        // Register BLE notification listener to catch IP reports from glasses
+        val notifyListener =
+                object : com.oudmon.ble.base.bluetooth.GlassesDeviceNotifyListener() {
+                    override fun parseData(
+                            cmdType: Int,
+                            response: com.oudmon.ble.base.bluetooth.GlassesDeviceNotifyRsp
+                    ) {
+                        val load = response.loadData
+                        if (load.size < 7) return
+                        when (load[6].toInt()) {
+                            0x08 -> {
+                                // Glasses reporting its WiFi IP via BLE
+                                if (load.size >= 11) {
+                                    val ip =
+                                            "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[7])}." +
+                                                    "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[8])}." +
+                                                    "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[9])}." +
+                                                    "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[10])}"
+                                    Log.i(TAG, "BLE reported glasses WiFi IP: $ip")
+                                    bleIp = ip
+                                }
+                            }
+                            0x09 -> {
+                                val raw = load.getOrNull(7) ?: 0
+                                val errorCode =
+                                        com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(raw)
+                                Log.e(TAG, "BLE WiFi/P2P error from glasses: $errorCode")
+                            }
+                        }
+                    }
+                }
+        try {
+            LargeDataHandler.getInstance().addOutDeviceListener(2, notifyListener)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register notify listener: ${e.message}")
+        }
 
         val callback =
                 object : WifiP2pManagerSingleton.WifiP2pCallback {
@@ -183,11 +220,21 @@ class MediaSyncManager(private val context: Context) {
                         Log.e(TAG, "WiFi P2P disabled")
                     }
                     override fun onPeersChanged(peers: Collection<WifiP2pDevice>) {
-                        Log.i(TAG, "Found ${peers.size} P2P devices")
-                        val target = peers.firstOrNull()
+                        Log.i(
+                                TAG,
+                                "Found ${peers.size} P2P devices: ${peers.joinToString { "${it.deviceName}(${it.deviceAddress})" }}"
+                        )
+
+                        // Find the glasses device — filter by known name patterns
+                        val target = findGlassesDevice(peers)
                         if (target != null) {
-                            Log.i(TAG, "Connecting to: ${target.deviceName}")
+                            Log.i(
+                                    TAG,
+                                    "Connecting to glasses: ${target.deviceName} / ${target.deviceAddress}"
+                            )
                             wifiP2pManager.connectToDevice(target)
+                        } else {
+                            Log.w(TAG, "No glasses device found among peers")
                         }
                     }
                     override fun onThisDeviceChanged(device: WifiP2pDevice) {}
@@ -197,7 +244,6 @@ class MediaSyncManager(private val context: Context) {
                         p2pNetwork = findP2pNetwork()
                         bindProcess(p2pNetwork)
                         Log.i(TAG, "P2P connected: ip=$groupOwnerIp")
-                        // Don't complete yet — we need to find the glasses IP
                     }
                     override fun onDisconnected() {
                         p2pConnected = false
@@ -205,38 +251,58 @@ class MediaSyncManager(private val context: Context) {
                         unbindProcess()
                     }
                     override fun onPeerDiscoveryStarted() {}
-                    override fun onPeerDiscoveryFailed(reason: Int) {}
+                    override fun onPeerDiscoveryFailed(reason: Int) {
+                        Log.w(TAG, "Discovery failed: $reason")
+                    }
                     override fun onConnectRequestSent() {}
-                    override fun onConnectRequestFailed(reason: Int) {}
+                    override fun onConnectRequestFailed(reason: Int) {
+                        Log.w(TAG, "Connect failed: $reason")
+                    }
                     override fun connecting() {}
                     override fun cancelConnect() {}
                     override fun cancelConnectFail(reason: Int) {}
                     override fun retryAlsoFailed() {
-                        if (!p2pReady.isCompleted)
-                                p2pReady.completeExceptionally(Exception("P2P 连接失败"))
+                        Log.e(TAG, "P2P retry also failed")
                     }
                 }
         wifiP2pManager.addCallback(callback)
         wifiP2pManager.startPeerDiscovery()
 
-        // Send BLE command to bring up glasses WiFi
+        // Send BLE command to bring up glasses WiFi — also parses the P2P device name from response
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x04)) { _, resp ->
             Log.i(TAG, "BLE WiFi command ack: dataType=${resp.dataType}, error=${resp.errorCode}")
+            // Try to extract the glasses P2P name from the response
+            try {
+                val loadData = resp.loadData
+                if (loadData != null && loadData.size > 10) {
+                    // The response contains the glasses WiFi P2P name as ASCII bytes
+                    // Format varies, but typically after the header bytes
+                    val nameBytes = loadData.drop(9).takeWhile { it.toInt() != 0 }.toByteArray()
+                    if (nameBytes.isNotEmpty()) {
+                        val name = String(nameBytes, Charsets.US_ASCII)
+                        if (name.length > 3) {
+                            glassesP2pName = name
+                            Log.i(TAG, "Glasses P2P name from BLE: $name")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse glasses P2P name: ${e.message}")
+            }
         }
 
         // Wait for P2P to connect and try to find device IP
         val deviceIp =
-                withTimeoutOrNull(60_000) {
-                    // Poll until we can reach media.config
+                withTimeoutOrNull(90_000) {
                     var resolvedIp: String? = null
                     val startMs = System.currentTimeMillis()
-                    while (isActive && System.currentTimeMillis() - startMs < 55_000) {
+                    while (isActive && System.currentTimeMillis() - startMs < 85_000) {
                         if (p2pConnected) {
                             // Try candidates
                             val candidates = buildCandidateIps()
                             for (ip in candidates) {
                                 if (ip.isBlank()) continue
-                                if (mediaConfigOk(ip, 2000)) {
+                                if (mediaConfigOk(ip, 3000)) {
                                     resolvedIp = ip
                                     break
                                 }
@@ -254,8 +320,13 @@ class MediaSyncManager(private val context: Context) {
                     resolvedIp
                 }
 
+        // Cleanup notify listener
+        try {
+            LargeDataHandler.getInstance().removeOutDeviceListener(notifyListener)
+        } catch (_: Exception) {}
+
         if (deviceIp == null) {
-            _syncState.value = SyncState.Error("无法连接眼镜 WiFi 服务")
+            _syncState.value = SyncState.Error("无法连接眼镜 WiFi，请确保眼镜已开启 WiFi 并重试")
             wifiP2pManager.removeCallback(callback)
             return
         }
@@ -379,6 +450,102 @@ class MediaSyncManager(private val context: Context) {
             Log.e(TAG, "Download $fileName error: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Find the glasses P2P device from a list of peers.
+     *
+     * Strategy (ordered by priority):
+     * 1. Match against the P2P name received from BLE response (e.g. "AIMB-G3_*")
+     * 2. Match known glasses name prefixes: AIMB, Cyan, HeyCyan, G3, G4
+     * 3. Match the BLE device MAC address (the glasses P2P MAC is often related)
+     * 4. Skip known non-glasses devices (TV, phone, printer, etc.)
+     */
+    private fun findGlassesDevice(peers: Collection<WifiP2pDevice>): WifiP2pDevice? {
+        if (peers.isEmpty()) return null
+
+        // 1. Match against BLE-reported P2P name
+        val bleP2pName = glassesP2pName
+        if (!bleP2pName.isNullOrBlank()) {
+            val match =
+                    peers.firstOrNull { device ->
+                        device.deviceName.equals(bleP2pName, ignoreCase = true) ||
+                                bleP2pName.contains(device.deviceName, ignoreCase = true) ||
+                                device.deviceName.contains(bleP2pName.take(10), ignoreCase = true)
+                    }
+            if (match != null) {
+                Log.i(TAG, "Matched glasses by BLE P2P name: ${match.deviceName}")
+                return match
+            }
+        }
+
+        // 2. Match known glasses name prefixes
+        val glassesPatterns = listOf("AIMB", "Cyan", "HeyCyan", "G3_", "G4_", "GLASSES", "glasses")
+        val byPattern =
+                peers.firstOrNull { device ->
+                    glassesPatterns.any { pattern ->
+                        device.deviceName.contains(pattern, ignoreCase = true)
+                    }
+                }
+        if (byPattern != null) {
+            Log.i(TAG, "Matched glasses by name pattern: ${byPattern.deviceName}")
+            return byPattern
+        }
+
+        // 3. Try matching BLE MAC address (strip common prefix differences)
+        val bleManager = BleOperateManager.getInstance()
+        val bleMac =
+                try {
+                    bleManager.connectedDevice?.address
+                } catch (_: Exception) {
+                    null
+                }
+        if (!bleMac.isNullOrBlank()) {
+            // P2P MAC may share last 4 characters with BLE MAC
+            val bleSuffix = bleMac.takeLast(8).uppercase()
+            val byMac =
+                    peers.firstOrNull { device ->
+                        device.deviceAddress.uppercase().endsWith(bleSuffix.takeLast(5))
+                    }
+            if (byMac != null) {
+                Log.i(TAG, "Matched glasses by MAC suffix: ${byMac.deviceName}")
+                return byMac
+            }
+        }
+
+        // 4. Skip known non-glasses devices, pick remaining
+        val skipPatterns =
+                listOf(
+                        "电视",
+                        "TV",
+                        "Printer",
+                        "打印",
+                        "Phone",
+                        "手机",
+                        "Speaker",
+                        "音箱",
+                        "Chromecast",
+                        "Fire",
+                        "Roku"
+                )
+        val filtered =
+                peers.filter { device ->
+                    skipPatterns.none { skip ->
+                        device.deviceName.contains(skip, ignoreCase = true)
+                    }
+                }
+        if (filtered.size == 1) {
+            Log.i(TAG, "Only one non-skipped peer: ${filtered[0].deviceName}")
+            return filtered[0]
+        }
+
+        // If we still can't identify, log all and return null
+        Log.w(
+                TAG,
+                "Cannot identify glasses among ${peers.size} peers: " +
+                        peers.joinToString { "${it.deviceName}(${it.deviceAddress})" }
+        )
+        return null
     }
 
     // ── Network Helpers ──
