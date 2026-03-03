@@ -207,6 +207,70 @@ private fun ChatBubble(message: ChatMessageEntity, onReplay: (ChatMessageEntity)
                                 }
                 ) {
                         Column(modifier = Modifier.padding(12.dp)) {
+                                // ── Vision image ──
+                                val imgPath = message.imagePath
+                                var showImageDialog by remember { mutableStateOf(false) }
+                                if (!imgPath.isNullOrBlank()) {
+                                        val bmp =
+                                                remember(imgPath) {
+                                                        try {
+                                                                val f = java.io.File(imgPath)
+                                                                if (f.exists())
+                                                                        android.graphics
+                                                                                .BitmapFactory
+                                                                                .decodeFile(
+                                                                                        f.absolutePath
+                                                                                )
+                                                                else null
+                                                        } catch (_: Exception) {
+                                                                null
+                                                        }
+                                                }
+                                        if (bmp != null) {
+                                                Image(
+                                                        bitmap = bmp.asImageBitmap(),
+                                                        contentDescription = "拍摄的图片",
+                                                        modifier =
+                                                                Modifier.fillMaxWidth()
+                                                                        .clip(
+                                                                                RoundedCornerShape(
+                                                                                        8.dp
+                                                                                )
+                                                                        )
+                                                                        .clickable {
+                                                                                showImageDialog =
+                                                                                        true
+                                                                        }
+                                                )
+                                                Spacer(modifier = Modifier.height(8.dp))
+
+                                                if (showImageDialog) {
+                                                        Dialog(
+                                                                onDismissRequest = {
+                                                                        showImageDialog = false
+                                                                }
+                                                        ) {
+                                                                Image(
+                                                                        bitmap =
+                                                                                bmp.asImageBitmap(),
+                                                                        contentDescription = "放大查看",
+                                                                        modifier =
+                                                                                Modifier.fillMaxWidth()
+                                                                                        .clip(
+                                                                                                RoundedCornerShape(
+                                                                                                        12.dp
+                                                                                                )
+                                                                                        )
+                                                                                        .clickable {
+                                                                                                showImageDialog =
+                                                                                                        false
+                                                                                        }
+                                                                )
+                                                        }
+                                                }
+                                        }
+                                }
+
                                 Text(
                                         text = message.content,
                                         style = MaterialTheme.typography.bodyMedium,
