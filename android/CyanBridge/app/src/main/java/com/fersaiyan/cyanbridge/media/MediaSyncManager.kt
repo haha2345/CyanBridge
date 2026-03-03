@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
 import android.os.Build
@@ -99,6 +100,11 @@ class MediaSyncManager(private val context: Context) {
     @Volatile private var p2pConnected = false
     @Volatile private var groupOwnerIp: String? = null
     @Volatile private var bleIp: String? = null
+
+    init {
+        // Load previously downloaded files from MediaStore on startup
+        CoroutineScope(Dispatchers.IO).launch { loadExistingFiles() }
+    }
 
     // ── Public API ──
 
@@ -375,7 +381,8 @@ class MediaSyncManager(private val context: Context) {
         // Download all files
         var success = 0
         var failed = 0
-        val downloaded = mutableListOf<MediaFileItem>()
+        val existingFiles = _downloadedFiles.value.toMutableList()
+        val newlyDownloaded = mutableListOf<MediaFileItem>()
 
         for ((index, file) in files.withIndex()) {
             if (syncJob?.isActive != true) break
@@ -388,11 +395,13 @@ class MediaSyncManager(private val context: Context) {
             val timestamp = parseTakenTimeMs(file.first) ?: System.currentTimeMillis()
             if (uri != null) {
                 success++
-                downloaded.add(MediaFileItem(file.first, file.second, uri, timestamp))
+                val item = MediaFileItem(file.first, file.second, uri, timestamp)
+                newlyDownloaded.add(item)
             } else {
                 failed++
             }
-            _downloadedFiles.value = downloaded.toList()
+            // Merge: new files first, then existing
+            _downloadedFiles.value = newlyDownloaded + existingFiles
             _currentlyDownloading.value = null
 
             // Pace downloads
@@ -837,5 +846,102 @@ class MediaSyncManager(private val context: Context) {
             val wifiP2pManager = WifiP2pManagerSingleton.getInstance(context)
             wifiP2pManager.unregisterReceiver()
         } catch (_: Exception) {}
+    }
+
+    /** Scan MediaStore for previously downloaded CyanBridge files. */
+    @Suppress("DEPRECATION")
+    private fun loadExistingFiles() {
+        try {
+            val resolver = context.contentResolver
+            val result = mutableListOf<MediaFileItem>()
+
+            // Query images
+            queryMediaStore(
+                    resolver,
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    MediaType.PHOTO,
+                    result
+            )
+            // Query videos
+            queryMediaStore(
+                    resolver,
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    MediaType.VIDEO,
+                    result
+            )
+            // Query audio
+            queryMediaStore(
+                    resolver,
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    MediaType.AUDIO,
+                    result
+            )
+
+            // Sort by timestamp descending (newest first)
+            result.sortByDescending { it.timestamp }
+            _downloadedFiles.value = result
+            Log.i(
+                    TAG,
+                    "Loaded ${result.size} existing files from MediaStore " +
+                            "(${result.count { it.type == MediaType.PHOTO }} photos, " +
+                            "${result.count { it.type == MediaType.VIDEO }} videos, " +
+                            "${result.count { it.type == MediaType.AUDIO }} audio)"
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load existing files: ${e.message}")
+        }
+    }
+
+    private fun queryMediaStore(
+            resolver: android.content.ContentResolver,
+            uri: Uri,
+            type: MediaType,
+            result: MutableList<MediaFileItem>
+    ) {
+        val projection =
+                arrayOf(
+                        MediaStore.MediaColumns._ID,
+                        MediaStore.MediaColumns.DISPLAY_NAME,
+                        MediaStore.MediaColumns.DATE_ADDED,
+                        MediaStore.MediaColumns.RELATIVE_PATH,
+                        MediaStore.MediaColumns.DATA // Fallback for older APIs
+                )
+
+        // Try RELATIVE_PATH filter (API 29+)
+        val selection =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+                } else {
+                    "${MediaStore.MediaColumns.DATA} LIKE ?"
+                }
+        val selectionArgs =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    arrayOf("%CyanBridge%")
+                } else {
+                    arrayOf("%DCIM/CyanBridge%")
+                }
+
+        resolver.query(
+                        uri,
+                        projection,
+                        selection,
+                        selectionArgs,
+                        "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+                )
+                ?.use { cursor ->
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val dateCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
+
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idCol)
+                        val name = cursor.getString(nameCol) ?: continue
+                        val dateAdded = cursor.getLong(dateCol) * 1000 // seconds to ms
+                        val contentUri =
+                                android.content.ContentUris.withAppendedId(uri, id).toString()
+
+                        result.add(MediaFileItem(name, type, contentUri, dateAdded))
+                    }
+                }
     }
 }
