@@ -4,10 +4,15 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.util.Log
+import com.fersaiyan.cyanbridge.chat.ChatEngine
+import com.fersaiyan.cyanbridge.chat.ChatSource
 import com.fersaiyan.cyanbridge.ui.BluetoothEvent
+import com.fersaiyan.cyanbridge.voice.AliyunAsrWakeSession
 import com.oudmon.ble.base.bluetooth.BleOperateManager
 import com.oudmon.ble.base.bluetooth.DeviceManager
 import com.oudmon.ble.base.communication.LargeDataHandler
+import com.oudmon.ble.base.communication.bigData.resp.GlassesDeviceNotifyListener
+import com.oudmon.ble.base.communication.bigData.resp.GlassesDeviceNotifyRsp
 import com.oudmon.ble.base.scan.BleScannerHelper
 import com.oudmon.ble.base.scan.ScanRecord
 import com.oudmon.ble.base.scan.ScanWrapperCallback
@@ -107,8 +112,76 @@ class GlassesRepository private constructor(private val context: Context) {
 
     // ── Voice Wake ───────────────────────────────────────────
 
+    private var lastVoiceWakeAtMs: Long = 0L
+    private var aliyunAsr: AliyunAsrWakeSession? = null
+    private var deviceNotifyRegistered = false
+
+    /**
+     * Register the DeviceNotify listener so we catch wake events (0x03) even from
+     * ComposeMainActivity (the old listener was only in MainActivity).
+     */
+    private fun ensureDeviceNotifyListener() {
+        if (deviceNotifyRegistered) return
+        deviceNotifyRegistered = true
+        Log.i(TAG, "Registering DeviceNotifyListener for wake events")
+        LargeDataHandler.getInstance()
+                .addOutDeviceListener(
+                        100,
+                        object : GlassesDeviceNotifyListener() {
+                            override fun parseData(cmdType: Int, response: GlassesDeviceNotifyRsp) {
+                                Log.i(
+                                        TAG,
+                                        "DeviceNotify: cmdType=0x${Integer.toHexString(cmdType)}, loadData size=${response.loadData?.size}"
+                                )
+                                try {
+                                    when (cmdType) {
+                                        0x03 -> {
+                                            if (response.loadData != null &&
+                                                            response.loadData.size > 7 &&
+                                                            response.loadData[7].toInt() == 1
+                                            ) {
+                                                Log.i(TAG, "*** VOICE WAKE EVENT DETECTED ***")
+                                                onVoiceWakeTriggered()
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "DeviceNotify parse error", e)
+                                }
+                            }
+                        }
+                )
+    }
+
+    private fun onVoiceWakeTriggered() {
+        val now = System.currentTimeMillis()
+        if (now - lastVoiceWakeAtMs < 800) {
+            Log.i(TAG, "Wake debounce: skipped")
+            return
+        }
+        lastVoiceWakeAtMs = now
+        Log.i(TAG, ">>> Starting ASR from voice wake")
+
+        // Lazily create the ASR session
+        if (aliyunAsr == null) {
+            Log.i(TAG, "Creating AliyunAsrWakeSession")
+            aliyunAsr =
+                    AliyunAsrWakeSession(
+                            context = context,
+                            onResult = { text ->
+                                Log.i(TAG, "ASR result=$text")
+                                ChatEngine.submitUserText(text, ChatSource.ASR)
+                            },
+                            onStatus = { message -> Log.i(TAG, "ASR status: $message") }
+                    )
+        }
+        aliyunAsr?.start("wake")
+    }
+
     private fun syncAiVoiceWake() {
         if (!BleOperateManager.getInstance().isConnected) return
+        // Also ensure the DeviceNotify listener is registered
+        ensureDeviceNotifyListener()
         Log.i(TAG, "Querying aiVoiceWake status...")
         LargeDataHandler.getInstance().aiVoiceWake(false, false) { _, rsp ->
             val isOpen =
