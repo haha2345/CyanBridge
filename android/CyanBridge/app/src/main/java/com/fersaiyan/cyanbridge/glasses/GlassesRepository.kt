@@ -322,7 +322,7 @@ class GlassesRepository private constructor(private val context: Context) {
             val workTypeIng =
                     clazz.getDeclaredField("workTypeIng").apply { isAccessible = true }.getInt(rsp)
 
-            if (dataType == 1 && errorCode == 0) {
+            if (dataType == 1) {
                 _glassesMode.value =
                         when (workTypeIng) {
                             1, 6 -> GlassesMode.CAMERA
@@ -334,10 +334,10 @@ class GlassesRepository private constructor(private val context: Context) {
                             else -> GlassesMode.IDLE
                         }
                 _lastActionResult.value = "$action 成功"
-                Log.i(TAG, "$action success, mode=$workTypeIng")
+                Log.i(TAG, "$action success, mode=$workTypeIng (errorCode=$errorCode)")
             } else {
-                _lastActionResult.value = "$action 失败 (error=$errorCode)"
-                Log.e(TAG, "$action failed: dataType=$dataType, errorCode=$errorCode")
+                _lastActionResult.value = "$action 失败"
+                Log.e(TAG, "$action failed: dataType=$dataType")
             }
         } catch (e: Exception) {
             _lastActionResult.value = "$action 异常"
