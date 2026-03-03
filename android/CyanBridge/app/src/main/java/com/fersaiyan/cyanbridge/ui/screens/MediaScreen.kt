@@ -2,17 +2,25 @@ package com.fersaiyan.cyanbridge.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -21,6 +29,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import coil.decode.VideoFrameDecoder
+import coil.request.ImageRequest
 import com.fersaiyan.cyanbridge.media.MediaSyncManager
 import com.fersaiyan.cyanbridge.ui.accessibility.LargeTouchButton
 import com.fersaiyan.cyanbridge.ui.accessibility.isBlindMode
@@ -38,6 +49,11 @@ fun MediaScreen(mediaVm: MediaViewModel = viewModel()) {
         val downloadedFiles by mediaVm.downloadedFiles.collectAsState()
         val isConnected by mediaVm.isConnected.collectAsState()
         val mediaCount by mediaVm.mediaCount.collectAsState()
+        val currentlyDownloading by mediaVm.currentlyDownloading.collectAsState()
+
+        val isSyncing =
+                syncState is MediaSyncManager.SyncState.Connecting ||
+                        syncState is MediaSyncManager.SyncState.Syncing
 
         // Auto-query count when connected
         LaunchedEffect(isConnected) {
@@ -57,6 +73,19 @@ fun MediaScreen(mediaVm: MediaViewModel = viewModel()) {
                                 }
                         downloadedFiles.filter { it.type == type }
                 }
+
+        // Show downloading cell if currently downloading matches the selected tab
+        val showDownloadingCell =
+                currentlyDownloading?.let {
+                        val type =
+                                when (selectedTab) {
+                                        0 -> MediaSyncManager.MediaType.PHOTO
+                                        1 -> MediaSyncManager.MediaType.VIDEO
+                                        else -> MediaSyncManager.MediaType.AUDIO
+                                }
+                        it.type == type
+                }
+                        ?: false
 
         Column(
                 modifier =
@@ -177,7 +206,8 @@ fun MediaScreen(mediaVm: MediaViewModel = viewModel()) {
                         }
 
                         // Content
-                        if (filteredFiles.isEmpty()) {
+                        val hasContent = filteredFiles.isNotEmpty() || showDownloadingCell
+                        if (!hasContent && !isSyncing) {
                                 Box(
                                         modifier = Modifier.fillMaxSize(),
                                         contentAlignment = Alignment.Center
@@ -206,44 +236,64 @@ fun MediaScreen(mediaVm: MediaViewModel = viewModel()) {
                                         }
                                 }
                         } else {
+                                // Build list: downloaded files + optional "downloading" placeholder
+                                val gridItems = buildList {
+                                        addAll(filteredFiles)
+                                        if (showDownloadingCell && currentlyDownloading != null) {
+                                                add(currentlyDownloading!!)
+                                        }
+                                }
+
                                 LazyVerticalGrid(
-                                        columns = GridCells.Adaptive(minSize = 100.dp),
+                                        columns = GridCells.Adaptive(minSize = 110.dp),
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         modifier = Modifier.fillMaxSize()
                                 ) {
-                                        items(filteredFiles) { file ->
-                                                MediaFileCard(file) {
-                                                        try {
-                                                                val uri = Uri.parse(file.localUri)
-                                                                val mime =
-                                                                        when (file.type) {
-                                                                                MediaSyncManager
-                                                                                        .MediaType
-                                                                                        .PHOTO ->
-                                                                                        "image/jpeg"
-                                                                                MediaSyncManager
-                                                                                        .MediaType
-                                                                                        .VIDEO ->
-                                                                                        "video/mp4"
-                                                                                MediaSyncManager
-                                                                                        .MediaType
-                                                                                        .AUDIO ->
-                                                                                        "audio/ogg"
-                                                                        }
-                                                                val intent =
-                                                                        Intent(Intent.ACTION_VIEW)
-                                                                                .apply {
-                                                                                        setDataAndType(
-                                                                                                uri,
-                                                                                                mime
-                                                                                        )
-                                                                                        addFlags(
-                                                                                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                                                                        )
+                                        items(gridItems, key = { it.name }) { file ->
+                                                val isDownloading = file.localUri == null
+                                                if (isDownloading) {
+                                                        DownloadingCell(file)
+                                                } else {
+                                                        MediaFileCard(file) {
+                                                                try {
+                                                                        val uri =
+                                                                                Uri.parse(
+                                                                                        file.localUri
+                                                                                )
+                                                                        val mime =
+                                                                                when (file.type) {
+                                                                                        MediaSyncManager
+                                                                                                .MediaType
+                                                                                                .PHOTO ->
+                                                                                                "image/jpeg"
+                                                                                        MediaSyncManager
+                                                                                                .MediaType
+                                                                                                .VIDEO ->
+                                                                                                "video/mp4"
+                                                                                        MediaSyncManager
+                                                                                                .MediaType
+                                                                                                .AUDIO ->
+                                                                                                "audio/ogg"
                                                                                 }
-                                                                context.startActivity(intent)
-                                                        } catch (_: Exception) {}
+                                                                        val intent =
+                                                                                Intent(
+                                                                                                Intent.ACTION_VIEW
+                                                                                        )
+                                                                                        .apply {
+                                                                                                setDataAndType(
+                                                                                                        uri,
+                                                                                                        mime
+                                                                                                )
+                                                                                                addFlags(
+                                                                                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                                                                )
+                                                                                        }
+                                                                        context.startActivity(
+                                                                                intent
+                                                                        )
+                                                                } catch (_: Exception) {}
+                                                        }
                                                 }
                                         }
                                 }
@@ -438,7 +488,7 @@ private fun SyncStatusBar(syncState: MediaSyncManager.SyncState) {
                 }
                 is MediaSyncManager.SyncState.Done -> {
                         val msg =
-                                if (syncState.failed == 0) "✓ 完成：${syncState.success} 个文件"
+                                if (syncState.failed == 0) "✓ 完成：${syncState.success} 个文件已下载到本地"
                                 else "完成：${syncState.success} 成功，${syncState.failed} 失败"
                         Text(
                                 msg,
@@ -458,40 +508,200 @@ private fun SyncStatusBar(syncState: MediaSyncManager.SyncState) {
         }
 }
 
+/** A shimmer animation cell shown for the file currently being downloaded. */
 @Composable
-private fun MediaFileCard(file: MediaSyncManager.MediaFileItem, onClick: () -> Unit) {
+private fun DownloadingCell(file: MediaSyncManager.MediaFileItem) {
         val icon =
                 when (file.type) {
                         MediaSyncManager.MediaType.PHOTO -> Icons.Filled.Image
                         MediaSyncManager.MediaType.VIDEO -> Icons.Filled.Videocam
                         MediaSyncManager.MediaType.AUDIO -> Icons.Filled.MicNone
                 }
+
+        // Shimmer animation
+        val shimmerColors =
+                listOf(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                )
+        val transition = rememberInfiniteTransition(label = "shimmer")
+        val translateAnim by
+                transition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 1000f,
+                        animationSpec =
+                                infiniteRepeatable(
+                                        animation = tween(1200, easing = LinearEasing),
+                                        repeatMode = RepeatMode.Restart
+                                ),
+                        label = "shimmer_translate"
+                )
+        val brush =
+                Brush.linearGradient(
+                        colors = shimmerColors,
+                        start = Offset(translateAnim - 500f, translateAnim - 500f),
+                        end = Offset(translateAnim, translateAnim)
+                )
+
+        Card(
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                shape = RoundedCornerShape(12.dp),
+        ) {
+                Box(
+                        modifier = Modifier.fillMaxSize().background(brush),
+                        contentAlignment = Alignment.Center
+                ) {
+                        Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(8.dp)
+                        ) {
+                                CircularProgressIndicator(
+                                        modifier = Modifier.size(28.dp),
+                                        strokeWidth = 2.5.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                        "下载中...",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium,
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                        text = file.name.substringBeforeLast('.'),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center,
+                                        color =
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                        alpha = 0.7f
+                                                )
+                                )
+                        }
+                }
+        }
+}
+
+/** Card showing a downloaded media file with thumbnail preview. */
+@Composable
+private fun MediaFileCard(file: MediaSyncManager.MediaFileItem, onClick: () -> Unit) {
+        val context = LocalContext.current
+        val icon =
+                when (file.type) {
+                        MediaSyncManager.MediaType.PHOTO -> Icons.Filled.Image
+                        MediaSyncManager.MediaType.VIDEO -> Icons.Filled.Videocam
+                        MediaSyncManager.MediaType.AUDIO -> Icons.Filled.MicNone
+                }
+
         Card(
                 modifier = Modifier.fillMaxWidth().aspectRatio(1f).clickable { onClick() },
+                shape = RoundedCornerShape(12.dp),
                 colors =
                         CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant
                         )
         ) {
-                Column(
-                        modifier = Modifier.fillMaxSize().padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                ) {
-                        Icon(
-                                icon,
-                                file.name,
-                                Modifier.size(32.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                                text = file.name.substringBeforeLast('.'),
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center
-                        )
+                Box(modifier = Modifier.fillMaxSize()) {
+                        when (file.type) {
+                                MediaSyncManager.MediaType.PHOTO -> {
+                                        // Show actual image thumbnail
+                                        AsyncImage(
+                                                model =
+                                                        ImageRequest.Builder(context)
+                                                                .data(Uri.parse(file.localUri))
+                                                                .crossfade(true)
+                                                                .size(256)
+                                                                .build(),
+                                                contentDescription = file.name,
+                                                modifier =
+                                                        Modifier.fillMaxSize()
+                                                                .clip(RoundedCornerShape(12.dp)),
+                                                contentScale = ContentScale.Crop
+                                        )
+                                }
+                                MediaSyncManager.MediaType.VIDEO -> {
+                                        // Show video frame thumbnail
+                                        AsyncImage(
+                                                model =
+                                                        ImageRequest.Builder(context)
+                                                                .data(Uri.parse(file.localUri))
+                                                                .decoderFactory(
+                                                                        VideoFrameDecoder.Factory()
+                                                                )
+                                                                .crossfade(true)
+                                                                .size(256)
+                                                                .build(),
+                                                contentDescription = file.name,
+                                                modifier =
+                                                        Modifier.fillMaxSize()
+                                                                .clip(RoundedCornerShape(12.dp)),
+                                                contentScale = ContentScale.Crop
+                                        )
+                                        // Play icon overlay
+                                        Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                        ) {
+                                                Icon(
+                                                        Icons.Filled.PlayCircle,
+                                                        contentDescription = "播放视频",
+                                                        modifier = Modifier.size(40.dp),
+                                                        tint = Color.White.copy(alpha = 0.85f)
+                                                )
+                                        }
+                                }
+                                MediaSyncManager.MediaType.AUDIO -> {
+                                        // Audio has no visual preview; show icon
+                                        Column(
+                                                modifier = Modifier.fillMaxSize().padding(8.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center
+                                        ) {
+                                                Icon(
+                                                        icon,
+                                                        file.name,
+                                                        Modifier.size(36.dp),
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                )
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                        text = file.name.substringBeforeLast('.'),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        textAlign = TextAlign.Center
+                                                )
+                                        }
+                                }
+                        }
+
+                        // Type badge for photo/video
+                        if (file.type != MediaSyncManager.MediaType.AUDIO) {
+                                Surface(
+                                        modifier =
+                                                Modifier.align(Alignment.BottomStart).padding(4.dp),
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color.Black.copy(alpha = 0.5f)
+                                ) {
+                                        Text(
+                                                text = file.name.substringBeforeLast('.'),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier =
+                                                        Modifier.padding(
+                                                                        horizontal = 4.dp,
+                                                                        vertical = 2.dp
+                                                                )
+                                                                .widthIn(max = 100.dp)
+                                        )
+                                }
+                        }
                 }
         }
 }

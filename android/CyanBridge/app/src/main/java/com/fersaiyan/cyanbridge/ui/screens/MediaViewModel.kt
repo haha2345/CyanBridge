@@ -22,6 +22,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     val downloadedFiles: StateFlow<List<MediaSyncManager.MediaFileItem>> =
             syncManager.downloadedFiles
     val mediaCount: StateFlow<MediaSyncManager.MediaCount?> = syncManager.mediaCount
+    val currentlyDownloading: StateFlow<MediaSyncManager.MediaFileItem?> =
+            syncManager.currentlyDownloading
     val isConnected: StateFlow<Boolean> = glassesRepo.connectionState
 
     /** Step 1: BLE instant query (no WiFi) */

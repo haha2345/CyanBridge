@@ -89,6 +89,10 @@ class MediaSyncManager(private val context: Context) {
     private val _mediaCount = MutableStateFlow<MediaCount?>(null)
     val mediaCount: StateFlow<MediaCount?> = _mediaCount.asStateFlow()
 
+    // Track the file currently being downloaded (name + type) for UI animation
+    private val _currentlyDownloading = MutableStateFlow<MediaFileItem?>(null)
+    val currentlyDownloading: StateFlow<MediaFileItem?> = _currentlyDownloading.asStateFlow()
+
     private var syncJob: Job? = null
     @Volatile private var p2pNetwork: Network? = null
     @Volatile private var boundNetwork: Network? = null
@@ -377,6 +381,9 @@ class MediaSyncManager(private val context: Context) {
             if (syncJob?.isActive != true) break
             _syncState.value = SyncState.Syncing(index + 1, files.size, file.first)
 
+            // Show "downloading" placeholder in grid
+            _currentlyDownloading.value = MediaFileItem(file.first, file.second, null, 0)
+
             val uri = downloadAndSaveFile(file.first, file.second, deviceIp)
             val timestamp = parseTakenTimeMs(file.first) ?: System.currentTimeMillis()
             if (uri != null) {
@@ -386,12 +393,15 @@ class MediaSyncManager(private val context: Context) {
                 failed++
             }
             _downloadedFiles.value = downloaded.toList()
+            _currentlyDownloading.value = null
 
             // Pace downloads
-            delay(if (file.second == MediaType.VIDEO) 800 else 500)
+            delay(if (file.second == MediaType.VIDEO) 300 else 200)
         }
 
         _syncState.value = SyncState.Done(success, failed)
+        // Clear media count — glasses now have 0 files since they were downloaded
+        _mediaCount.value = null
         wifiP2pManager.removeCallback(callback)
     }
 
