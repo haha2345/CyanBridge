@@ -13,6 +13,9 @@ import android.util.Log
 import com.fersaiyan.cyanbridge.ui.wifi.p2p.WifiP2pManagerSingleton
 import com.oudmon.ble.base.bluetooth.BleOperateManager
 import com.oudmon.ble.base.communication.LargeDataHandler
+import com.oudmon.ble.base.communication.bigData.resp.GlassesDeviceNotifyListener
+import com.oudmon.ble.base.communication.bigData.resp.GlassesDeviceNotifyRsp
+import com.oudmon.ble.base.communication.utils.ByteUtil
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -176,32 +179,30 @@ class MediaSyncManager(private val context: Context) {
 
         // Register BLE notification listener to catch IP reports from glasses
         val notifyListener =
-                object : com.oudmon.ble.base.bluetooth.GlassesDeviceNotifyListener() {
-                    override fun parseData(
-                            cmdType: Int,
-                            response: com.oudmon.ble.base.bluetooth.GlassesDeviceNotifyRsp
-                    ) {
-                        val load = response.loadData
-                        if (load.size < 7) return
-                        when (load[6].toInt()) {
-                            0x08 -> {
-                                // Glasses reporting its WiFi IP via BLE
-                                if (load.size >= 11) {
-                                    val ip =
-                                            "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[7])}." +
-                                                    "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[8])}." +
-                                                    "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[9])}." +
-                                                    "${com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(load[10])}"
-                                    Log.i(TAG, "BLE reported glasses WiFi IP: $ip")
-                                    bleIp = ip
+                object : GlassesDeviceNotifyListener() {
+                    override fun parseData(cmdType: Int, response: GlassesDeviceNotifyRsp) {
+                        try {
+                            val load = response.loadData ?: return
+                            if (load.size < 7) return
+                            when (load[6].toInt()) {
+                                0x08 -> {
+                                    if (load.size >= 11) {
+                                        val ip =
+                                                "${ByteUtil.byteToInt(load[7])}." +
+                                                        "${ByteUtil.byteToInt(load[8])}." +
+                                                        "${ByteUtil.byteToInt(load[9])}." +
+                                                        "${ByteUtil.byteToInt(load[10])}"
+                                        Log.i(TAG, "BLE reported glasses WiFi IP: $ip")
+                                        bleIp = ip
+                                    }
+                                }
+                                0x09 -> {
+                                    val errorCode = ByteUtil.byteToInt(load.getOrNull(7) ?: 0)
+                                    Log.e(TAG, "BLE WiFi/P2P error from glasses: $errorCode")
                                 }
                             }
-                            0x09 -> {
-                                val raw = load.getOrNull(7) ?: 0
-                                val errorCode =
-                                        com.oudmon.ble.base.obkbluetooth.ByteUtil.byteToInt(raw)
-                                Log.e(TAG, "BLE WiFi/P2P error from glasses: $errorCode")
-                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "BLE notify parse error: ${e.message}")
                         }
                     }
                 }
@@ -271,19 +272,21 @@ class MediaSyncManager(private val context: Context) {
         // Send BLE command to bring up glasses WiFi — also parses the P2P device name from response
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x04)) { _, resp ->
             Log.i(TAG, "BLE WiFi command ack: dataType=${resp.dataType}, error=${resp.errorCode}")
-            // Try to extract the glasses P2P name from the response
+            // Try to extract glasses P2P name from the response loadData
             try {
                 val loadData = resp.loadData
                 if (loadData != null && loadData.size > 10) {
-                    // The response contains the glasses WiFi P2P name as ASCII bytes
-                    // Format varies, but typically after the header bytes
-                    val nameBytes = loadData.drop(9).takeWhile { it.toInt() != 0 }.toByteArray()
-                    if (nameBytes.isNotEmpty()) {
-                        val name = String(nameBytes, Charsets.US_ASCII)
-                        if (name.length > 3) {
-                            glassesP2pName = name
-                            Log.i(TAG, "Glasses P2P name from BLE: $name")
-                        }
+                    // Build name from ASCII bytes after offset 9
+                    val sb = StringBuilder()
+                    for (i in 9 until loadData.size) {
+                        val b = loadData[i].toInt() and 0xFF
+                        if (b == 0) break
+                        if (b in 0x20..0x7E) sb.append(b.toChar())
+                    }
+                    val name = sb.toString()
+                    if (name.length > 3) {
+                        glassesP2pName = name
+                        Log.i(TAG, "Glasses P2P name from BLE: $name")
                     }
                 }
             } catch (e: Exception) {
@@ -492,28 +495,7 @@ class MediaSyncManager(private val context: Context) {
             return byPattern
         }
 
-        // 3. Try matching BLE MAC address (strip common prefix differences)
-        val bleManager = BleOperateManager.getInstance()
-        val bleMac =
-                try {
-                    bleManager.connectedDevice?.address
-                } catch (_: Exception) {
-                    null
-                }
-        if (!bleMac.isNullOrBlank()) {
-            // P2P MAC may share last 4 characters with BLE MAC
-            val bleSuffix = bleMac.takeLast(8).uppercase()
-            val byMac =
-                    peers.firstOrNull { device ->
-                        device.deviceAddress.uppercase().endsWith(bleSuffix.takeLast(5))
-                    }
-            if (byMac != null) {
-                Log.i(TAG, "Matched glasses by MAC suffix: ${byMac.deviceName}")
-                return byMac
-            }
-        }
-
-        // 4. Skip known non-glasses devices, pick remaining
+        // 3. Skip known non-glasses devices, pick remaining
         val skipPatterns =
                 listOf(
                         "电视",
