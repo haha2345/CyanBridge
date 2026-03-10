@@ -116,16 +116,25 @@ class AliyunAsrWakeSession(
             return
         }
 
-        if (BuildConfig.ALIYUN_ASR_APPKEY.isBlank() || BuildConfig.ALIYUN_ASR_TOKEN.isBlank()) {
+        if (BuildConfig.ALIYUN_ASR_APPKEY.isBlank()) {
             running.set(false)
-            logStatus("ALIYUN_ASR_APPKEY / ALIYUN_ASR_TOKEN missing in local.properties")
+            logStatus("ALIYUN_ASR_APPKEY missing in local.properties")
+            return
+        }
+
+        // Verify token is obtainable
+        val token = try {
+            NlsTokenManager.getTokenBlocking()
+        } catch (e: Exception) {
+            running.set(false)
+            logStatus("Failed to get NLS token: ${e.message}")
             return
         }
 
         logStatus("Aliyun ASR: starting ($source)")
         Log.i(
                 TAG,
-                "APPKEY=${BuildConfig.ALIYUN_ASR_APPKEY.take(6)}... TOKEN=${BuildConfig.ALIYUN_ASR_TOKEN.take(6)}..."
+                "APPKEY=${BuildConfig.ALIYUN_ASR_APPKEY.take(6)}... TOKEN=${token.take(6)}..."
         )
 
         audioQueue.clear()
@@ -287,7 +296,7 @@ class AliyunAsrWakeSession(
     private fun genInitParams(debugPath: String): String {
         val obj = JSONObject()
         obj["app_key"] = BuildConfig.ALIYUN_ASR_APPKEY
-        obj["token"] = BuildConfig.ALIYUN_ASR_TOKEN
+        obj["token"] = NlsTokenManager.getTokenBlocking()
         obj["device_id"] = getDeviceId()
         obj["url"] = DEFAULT_WS_URL
         obj["debug_path"] = debugPath

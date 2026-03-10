@@ -59,9 +59,13 @@ android {
         // Aliyun NUI ASR (put secrets in local.properties, not in git)
         // local.properties:
         //   ALIYUN_ASR_APPKEY=...
-        //   ALIYUN_ASR_TOKEN=...
+        //   ALIYUN_ASR_TOKEN=...   (optional fallback, auto-refresh preferred)
+        //   ALIYUN_AK_ID=...       (for auto token refresh)
+        //   ALIYUN_AK_SECRET=...   (for auto token refresh)
         buildConfigField "String", "ALIYUN_ASR_APPKEY", "\"${localPropStr("ALIYUN_ASR_APPKEY", "")}\""
         buildConfigField "String", "ALIYUN_ASR_TOKEN", "\"${localPropStr("ALIYUN_ASR_TOKEN", "")}\""
+        buildConfigField "String", "ALIYUN_AK_ID", "\"${localPropStr("ALIYUN_AK_ID", "")}\""
+        buildConfigField "String", "ALIYUN_AK_SECRET", "\"${localPropStr("ALIYUN_AK_SECRET", "")}\""
 
         // Aliyun NLS TTS (defaults to ASR keys if not set)
         // local.properties:

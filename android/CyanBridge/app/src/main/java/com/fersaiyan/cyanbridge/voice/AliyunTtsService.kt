@@ -24,8 +24,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AliyunTtsService(
     private val context: Context,
     private val appKey: String = BuildConfig.ALIYUN_TTS_APPKEY.ifBlank { BuildConfig.ALIYUN_ASR_APPKEY },
-    private val token: String = BuildConfig.ALIYUN_TTS_TOKEN.ifBlank { BuildConfig.ALIYUN_ASR_TOKEN },
 ) {
+    /** Token is fetched dynamically — auto-refreshes before expiry. */
+    private val token: String get() = NlsTokenManager.getTokenBlocking()
+
     private val initialized = AtomicBoolean(false)
     private val nui = NativeNui(Constants.ModeType.MODE_TTS)
     private val ttsLock = Any()

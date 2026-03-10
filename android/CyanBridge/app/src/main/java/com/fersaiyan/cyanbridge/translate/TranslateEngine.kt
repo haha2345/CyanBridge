@@ -129,7 +129,12 @@ class TranslateEngine(private val context: Context) {
     private fun ensureNuiInitialized(): Boolean {
         if (nuiInitialized.get()) return true
         val appKey = BuildConfig.ALIYUN_ASR_APPKEY
-        val token = BuildConfig.ALIYUN_ASR_TOKEN
+        val token = try {
+            com.fersaiyan.cyanbridge.voice.NlsTokenManager.getTokenBlocking()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get NLS token: ${e.message}")
+            return false
+        }
         if (appKey.isBlank() || token.isBlank()) {
             Log.e(TAG, "Missing ALIYUN_ASR credentials")
             return false
