@@ -138,17 +138,29 @@ DASHSCOPE_API_KEY=sk-xxx
 ```
 .
 ├── android/
-│   ├── CyanBridge/           # 主 App 项目
+│   ├── CyanBridge/            # 主 App 项目
+│   │   ├── docs/              # 📖 项目文档
+│   │   │   ├── PROJECT_ANALYSIS.md   # 项目全面分析（架构/模块/数据流/协议）
+│   │   │   └── DOC_INDEX.md          # 文档目录索引
 │   │   ├── app/src/main/java/com/fersaiyan/cyanbridge/
-│   │   │   ├── ui/           # Compose UI (screens, navigation, theme)
-│   │   │   ├── voice/        # 语音管线 (ASR, TTS, Voice Chat)
-│   │   │   ├── chat/         # AI 对话引擎
-│   │   │   └── MainActivity  # 旧版 XML UI (兼容保留)
-│   │   └── app/libs/         # HeyCyan BLE SDK (.aar)
-│   ├── APK_REVERSE_ENGINEERING_FULL.md  # 官方 APK 逆向分析
-│   └── VOICE_AI_PIPELINE_FROM_OFFICIAL_APK.md  # 语音管线分析
-├── ios/                      # iOS SDK (官方原版)
-├── QCSDK.framework/          # iOS BLE SDK
+│   │   │   ├── ai/            # AI 模型客户端 (Qwen-VL, Qwen-Flash)
+│   │   │   ├── auth/          # 用户认证 & 会员体系
+│   │   │   ├── chat/          # 对话引擎 & 历史存储
+│   │   │   ├── glasses/       # BLE 眼镜控制核心
+│   │   │   ├── media/         # WiFi P2P 媒体同步
+│   │   │   ├── translate/     # 同声传译引擎
+│   │   │   ├── vision/        # 视觉指令检测
+│   │   │   ├── voice/         # ASR + TTS + Token 管理
+│   │   │   └── ui/            # Compose UI (screens, navigation, theme)
+│   │   └── app/libs/          # HeyCyan BLE SDK (.aar)
+│   ├── APK_REVERSE_ENGINEERING_FULL.md   # 官方 APK 逆向分析
+│   ├── VOICE_AI_PIPELINE_FROM_OFFICIAL_APK.md  # 语音管线分析
+│   ├── AI_VISION_DASHSCOPE_MVP.md        # AI 视觉开发文档
+│   ├── DATA_DOWNLOAD_GUIDE.md            # 媒体下载指南
+│   └── VOICE_CHAT_DEV_MANUAL.md          # 语音对话开发手册
+├── ios/                       # iOS SDK (官方原版)
+├── QCSDK.framework/           # iOS BLE SDK
+├── 需求.md                    # 产品需求文档
 └── README.md
 ```
 
@@ -156,8 +168,23 @@ DASHSCOPE_API_KEY=sk-xxx
 
 ## 相关文档
 
-- [官方 APK 逆向分析报告](android/APK_REVERSE_ENGINEERING_FULL.md) — 翻译/意图分类/语音管线完整分析
+> 📖 完整文档索引请查看 [android/CyanBridge/docs/DOC_INDEX.md](android/CyanBridge/docs/DOC_INDEX.md)
+
+### 核心文档
+- **[项目全面分析](android/CyanBridge/docs/PROJECT_ANALYSIS.md)** — 架构、模块、数据流、BLE 协议详解
+- [文档目录索引](android/CyanBridge/docs/DOC_INDEX.md) — 所有文档分类汇总
+
+### 开发指南
+- [语音对话开发手册](android/VOICE_CHAT_DEV_MANUAL.md) — ASR + LLM + TTS 开发指南
+- [AI 视觉 DashScope MVP](android/AI_VISION_DASHSCOPE_MVP.md) — Qwen-VL 视觉理解开发文档
+- [数据下载指南](android/DATA_DOWNLOAD_GUIDE.md) — BLE + WiFi P2P + HTTP 媒体下载
+
+### 逆向分析
+- [官方 APK 逆向分析报告](android/APK_REVERSE_ENGINEERING_FULL.md) — 翻译/意图分类/语音管线
 - [语音 AI 管线文档](android/VOICE_AI_PIPELINE_FROM_OFFICIAL_APK.md) — ASR→LLM→TTS 完整流程
+- [视觉 AI 逆向分析](android/VISION_AI_REVERSE_ENGINEERING.md) — 新版官方 APK 图像识别逆向
+
+### SDK 文档
 - [Android SDK 开发指南](android/Android_SDK_Development_Guide_CN.pdf) — 官方 BLE SDK 文档
 
 ---

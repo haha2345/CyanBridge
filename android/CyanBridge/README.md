@@ -1,6 +1,11 @@
 # CyanBridge
 
-CyanBridge is an alternative Android app for HeyCyan-compatible / generic AI smartglasses.
+CyanBridge 是一款面向盲人/视障用户的 HeyCyan 智能眼镜辅助 Android App。
+
+## 📖 项目文档
+
+- **[项目全面分析](docs/PROJECT_ANALYSIS.md)** — 架构、模块、数据流、BLE 协议、API 配置等
+- **[文档目录索引](docs/DOC_INDEX.md)** — 所有文档的分类索引和推荐阅读顺序
 
 ## Key Notes
 - **Android-only assistant support**: Gemini/ChatGPT workflows are supported on Android only.
