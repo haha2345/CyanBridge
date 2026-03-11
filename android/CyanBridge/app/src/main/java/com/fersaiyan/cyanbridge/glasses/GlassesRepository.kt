@@ -9,7 +9,7 @@ import android.graphics.BitmapFactory
 import android.util.Log
 import com.fersaiyan.cyanbridge.chat.ChatEngine
 import com.fersaiyan.cyanbridge.chat.ChatSource
-import com.fersaiyan.cyanbridge.ui.BluetoothEvent
+import com.fersaiyan.cyanbridge.glasses.BluetoothEvent
 import com.fersaiyan.cyanbridge.voice.AliyunAsrWakeSession
 import com.oudmon.ble.base.bluetooth.BleOperateManager
 import com.oudmon.ble.base.bluetooth.DeviceManager

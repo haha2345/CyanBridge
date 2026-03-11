@@ -10,14 +10,11 @@ import android.util.Log
 import com.oudmon.ble.base.bluetooth.BleOperateManager
 import com.oudmon.ble.base.bluetooth.DeviceManager
 import org.greenrobot.eventbus.EventBus
+import com.fersaiyan.cyanbridge.glasses.BluetoothEvent
 
 /**
- * @author hzy ,
- * @date 2020/8/3,
- *
- *
- * "Programs should be written for other people to read,
- * and only incidentally for machines to execute"
+ * System Bluetooth state broadcast receiver.
+ * Handles BT on/off, pairing, and ACL events.
  */
 class BluetoothReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -34,28 +31,18 @@ class BluetoothReceiver : BroadcastReceiver() {
                     BleOperateManager.getInstance().setBluetoothTurnOff(true)
                     BleOperateManager.getInstance().reConnectMac=DeviceManager.getInstance().deviceAddress
                     BleOperateManager.getInstance().connectDirectly(DeviceManager.getInstance().deviceAddress)
-
                 }
             }
-            BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
-
-            }
-            BluetoothDevice.ACTION_ACL_CONNECTED -> {
-
-            }
-            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-
-            }
-
+            BluetoothDevice.ACTION_BOND_STATE_CHANGED -> { }
+            BluetoothDevice.ACTION_ACL_CONNECTED -> { }
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> { }
             BluetoothDevice.ACTION_FOUND -> {
                 val device =
                     intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
                 if (device != null) {
-                  //When the device is found and the Bluetooth address is the same as the current BLE address, call pairing
                     BleOperateManager.getInstance().createBondBluetoothJieLi(device)
                 }
             }
         }
     }
-
 }

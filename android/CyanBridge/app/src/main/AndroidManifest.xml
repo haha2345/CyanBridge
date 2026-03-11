@@ -66,24 +66,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:label="@string/app_name" />
-        <activity
-            android:name=".ui.AiVisionPreviewActivity"
-            android:exported="false"
-            android:label="@string/ai_vision_preview_title" />
-        <activity
-            android:name=".ui.chat.ChatActivity"
-            android:exported="false"
-            android:label="AI 对话"
-            android:windowSoftInputMode="adjustResize|stateHidden" />
-        <activity
-            android:name=".ui.BatteryOptimizationGuideActivity"
-            android:exported="false"
-            android:label="@string/battery_opt_title" />
-        <activity android:name=".ui.DeviceBindActivity" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

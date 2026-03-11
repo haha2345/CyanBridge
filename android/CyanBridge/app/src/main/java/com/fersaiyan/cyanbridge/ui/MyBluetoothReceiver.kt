@@ -9,6 +9,7 @@ import com.oudmon.ble.base.bluetooth.QCBluetoothCallbackCloneReceiver
 import com.oudmon.ble.base.communication.Constants
 import com.oudmon.ble.base.communication.LargeDataHandler
 import org.greenrobot.eventbus.EventBus
+import com.fersaiyan.cyanbridge.glasses.BluetoothEvent
 
 /**
  * @author hzy ,
