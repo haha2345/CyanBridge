@@ -58,7 +58,13 @@ class MediaSyncManager(private val context: Context) {
         data class Counted(val count: MediaCount) :
                 SyncState() // Counts ready, waiting for download
         data object Connecting : SyncState() // WiFi P2P connecting
-        data class Syncing(val current: Int, val total: Int, val fileName: String) : SyncState()
+        data class Syncing(
+                val current: Int,
+                val total: Int,
+                val fileName: String,
+                val speed: String = "",
+                val fileProgress: Int = -1
+        ) : SyncState()
         data class Done(val success: Int, val failed: Int) : SyncState()
         data class Error(val message: String) : SyncState()
     }
@@ -93,6 +99,9 @@ class MediaSyncManager(private val context: Context) {
     // Track the file currently being downloaded (name + type) for UI animation
     private val _currentlyDownloading = MutableStateFlow<MediaFileItem?>(null)
     val currentlyDownloading: StateFlow<MediaFileItem?> = _currentlyDownloading.asStateFlow()
+
+    // Download speed calculator (mirrors official DownloadSpeedCalculator)
+    private val speedCalc = SpeedCalculator()
 
     private var syncJob: Job? = null
     @Volatile private var p2pNetwork: Network? = null
@@ -212,6 +221,25 @@ class MediaSyncManager(private val context: Context) {
                             val load = response.loadData ?: return
                             if (load.size < 7) return
                             when (load[6].toInt()) {
+                                0x04 -> {
+                                    // P2P device name response from glasses WiFi init
+                                    // Extract device name string from remaining bytes
+                                    try {
+                                        // Find readable ASCII range in load starting after header bytes
+                                        val nameBytes = load.drop(7).filter { b -> b.toInt() in 0x20..0x7E }
+                                        if (nameBytes.isNotEmpty()) {
+                                            val rawName = String(nameBytes.toByteArray(), Charsets.US_ASCII)
+                                            // Also try to construct from BLE device name + MAC (official method)
+                                            Log.i(TAG, "BLE reported P2P name data (raw): $rawName")
+                                            if (rawName.length >= 5) {
+                                                glassesP2pName = rawName
+                                                Log.i(TAG, "\u2713 Glasses P2P name set: $rawName")
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Failed to parse P2P name: ${e.message}")
+                                    }
+                                }
                                 0x08 -> {
                                     if (load.size >= 11) {
                                         val ip =
@@ -294,12 +322,52 @@ class MediaSyncManager(private val context: Context) {
                     }
                 }
         wifiP2pManager.addCallback(callback)
-        wifiP2pManager.startPeerDiscovery()
 
-        // Send BLE command to bring up glasses WiFi
+        // Send BLE command to bring up glasses WiFi FIRST, then wait, then discover
+        // (Official flow: trigger glasses WiFi → wait for it to come up → then discover peers)
         LargeDataHandler.getInstance().glassesControl(byteArrayOf(0x02, 0x01, 0x04)) { _, resp ->
             Log.i(TAG, "BLE WiFi command ack: dataType=${resp.dataType}, error=${resp.errorCode}")
         }
+
+        // Also try to construct P2P name from BLE bonded device info
+        // The 0x04 BLE response handler above will set glassesP2pName from the
+        // actual WiFi response. As a fallback, we try to use the BLE bond info.
+        try {
+            val bondedDevices = android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.bondedDevices
+            val glassDevice = bondedDevices?.firstOrNull { device ->
+                val name = device.name ?: ""
+                listOf("E03", "AIMB", "Cyan", "HeyCyan", "G3_", "G4_").any {
+                    name.contains(it, ignoreCase = true)
+                }
+            }
+            if (glassDevice != null) {
+                val bleName = glassDevice.name ?: ""
+                val bleMac = glassDevice.address ?: ""
+                if (bleName.isNotBlank() && bleMac.isNotBlank()) {
+                    val macNoColons = bleMac.replace(":", "")
+                    val constructedName = if (bleName.contains("_")) {
+                        val parts = bleName.split("_")
+                        val prefix = if (parts.size > 2) parts.last() else parts.first()
+                        val trimmed = if (prefix.length > 20) prefix.substring(0, 20) else prefix
+                        "${trimmed}_${macNoColons}"
+                    } else {
+                        "${bleName}_${macNoColons}"
+                    }
+                    Log.i(TAG, "Constructed P2P name from bonded BLE device: $constructedName")
+                    if (glassesP2pName == null) {
+                        glassesP2pName = constructedName
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to construct P2P name from bonded devices: ${e.message}")
+        }
+
+        // Wait 3s for glasses WiFi to initialize, THEN start peer discovery
+        // (Critical fix: previously discovery started immediately, before glasses had WiFi up)
+        delay(3000)
+        wifiP2pManager.startPeerDiscovery()
+        Log.i(TAG, "Peer discovery started (after 3s wait for glasses WiFi)")
 
         // Wait for P2P to connect and try to find device IP
         val deviceIp =
@@ -307,6 +375,7 @@ class MediaSyncManager(private val context: Context) {
                     var resolvedIp: String? = null
                     val startMs = System.currentTimeMillis()
                     var lastLogMs = 0L
+                    var lastRediscoverMs = startMs
                     while (isActive && System.currentTimeMillis() - startMs < 55_000) {
                         val now = System.currentTimeMillis()
                         if (now - lastLogMs > 3000) {
@@ -315,8 +384,15 @@ class MediaSyncManager(private val context: Context) {
                                     TAG,
                                     "Resolving IP... p2p=$p2pConnected, bleIp=$bleIp, " +
                                             "bridgeIp=${bleIpBridge.ip.value}, groupOwnerIp=$groupOwnerIp, " +
-                                            "p2pNet=${p2pNetwork != null}"
+                                            "p2pNet=${p2pNetwork != null}, p2pName=$glassesP2pName"
                             )
+                        }
+
+                        // Re-start peer discovery periodically if not connected yet
+                        if (!p2pConnected && now - lastRediscoverMs > 10_000) {
+                            Log.i(TAG, "Re-starting peer discovery...")
+                            wifiP2pManager.startPeerDiscovery()
+                            lastRediscoverMs = now
                         }
 
                         if (!p2pConnected) {
@@ -378,27 +454,47 @@ class MediaSyncManager(private val context: Context) {
             return
         }
 
-        // Download all files
+        // Download all files (official-style: per-file retry + consecutive-error abort)
         var success = 0
         var failed = 0
+        var consecutiveErrors = 0
         val existingFiles = _downloadedFiles.value.toMutableList()
         val newlyDownloaded = mutableListOf<MediaFileItem>()
 
         for ((index, file) in files.withIndex()) {
             if (syncJob?.isActive != true) break
+            // Official abort: >3 consecutive errors → clear queue
+            if (consecutiveErrors > 3) {
+                Log.e(TAG, "Too many consecutive download errors ($consecutiveErrors), aborting remaining ${files.size - index} files")
+                break
+            }
+
             _syncState.value = SyncState.Syncing(index + 1, files.size, file.first)
 
             // Show "downloading" placeholder in grid
             _currentlyDownloading.value = MediaFileItem(file.first, file.second, null, 0)
 
-            val uri = downloadAndSaveFile(file.first, file.second, deviceIp)
+            speedCalc.start()
+            var uri = downloadAndSaveFile(file.first, file.second, deviceIp, index + 1, files.size)
+
+            // Official retry: if first attempt failed, retry once (mirrors failCount > 1 skip)
+            if (uri == null) {
+                Log.w(TAG, "Retrying ${file.first}...")
+                delay(500)
+                speedCalc.start()
+                uri = downloadAndSaveFile(file.first, file.second, deviceIp, index + 1, files.size)
+            }
+
             val timestamp = parseTakenTimeMs(file.first) ?: System.currentTimeMillis()
             if (uri != null) {
                 success++
+                consecutiveErrors = 0
                 val item = MediaFileItem(file.first, file.second, uri, timestamp)
                 newlyDownloaded.add(item)
             } else {
                 failed++
+                consecutiveErrors++
+                Log.w(TAG, "Failed ${file.first} (consecutive errors: $consecutiveErrors)")
             }
             // Merge: new files first, then existing
             _downloadedFiles.value = newlyDownloaded + existingFiles
@@ -416,25 +512,50 @@ class MediaSyncManager(private val context: Context) {
 
     // ── HTTP Helpers ──
 
+    /**
+     * Download the file list from glasses.
+     * Official app uses photo.txt; we also support media.config as fallback.
+     * Includes 1 retry per URL (mirrors official getPhotoTextFile retry logic).
+     */
     private fun downloadMediaConfig(deviceIp: String): String? {
-        return try {
-            val url = "http://$deviceIp/files/media.config"
-            Log.i(TAG, "Downloading: $url")
-            val conn = openConnection(URL(url))
-            conn.connectTimeout = 10000
-            conn.readTimeout = 30000
-            if (conn.responseCode == HttpURLConnection.HTTP_OK) {
-                conn.inputStream.bufferedReader().use { it.readText() }
-            } else {
-                Log.e(TAG, "media.config failed: ${conn.responseCode}")
-                null
+        // Try photo.txt first (official), then media.config (our custom)
+        val candidates = listOf(
+                "http://$deviceIp/files/photo.txt",
+                "http://$deviceIp/files/media.config"
+        )
+        for (url in candidates) {
+            // Each URL gets 1 retry (mirrors official)
+            for (attempt in 1..2) {
+                try {
+                    Log.i(TAG, "Downloading file list: $url (attempt $attempt)")
+                    val conn = openConnection(URL(url))
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 30000
+                    if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                        val content = conn.inputStream.bufferedReader().use { it.readText() }
+                        if (content.isNotBlank()) {
+                            Log.i(TAG, "✓ File list from $url (${content.lines().size} lines)")
+                            return content
+                        }
+                    } else {
+                        Log.w(TAG, "$url failed: HTTP ${conn.responseCode}")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "$url error (attempt $attempt): ${e.message}")
+                }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "media.config error: ${e.message}")
-            null
         }
+        Log.e(TAG, "Failed to download file list from all candidates")
+        return null
     }
 
+    /**
+     * Parse file list content. Official logic:
+     * - .jpg/.jpeg → PHOTO
+     * - .mp4/.avi → VIDEO
+     * - .opus → AUDIO
+     * - No extension (no '.' in name) → VIDEO (official: composite file with gyroscope data)
+     */
     private fun parseMediaConfig(content: String): List<Pair<String, MediaType>> {
         val files = mutableListOf<Pair<String, MediaType>>()
         content.trim().lines().forEach { line ->
@@ -444,8 +565,12 @@ class MediaSyncManager(private val context: Context) {
                         when {
                             name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) ->
                                     MediaType.PHOTO
-                            name.endsWith(".mp4", true) -> MediaType.VIDEO
+                            name.endsWith(".mp4", true) || name.endsWith(".avi", true) ->
+                                    MediaType.VIDEO
                             name.endsWith(".opus", true) -> MediaType.AUDIO
+                            // Official: extensionless files are treated as video
+                            // (may contain embedded gyroscope data with "Thisadir" marker)
+                            !name.contains('.') -> MediaType.VIDEO
                             else -> null
                         }
                 if (type != null) files.add(name to type)
@@ -453,12 +578,24 @@ class MediaSyncManager(private val context: Context) {
         }
         Log.i(
                 TAG,
-                "Parsed ${files.size} files: photos=${files.count { it.second == MediaType.PHOTO }}, videos=${files.count { it.second == MediaType.VIDEO }}, audio=${files.count { it.second == MediaType.AUDIO }}"
+                "Parsed ${files.size} files: photos=${files.count { it.second == MediaType.PHOTO }}, " +
+                "videos=${files.count { it.second == MediaType.VIDEO }}, " +
+                "audio=${files.count { it.second == MediaType.AUDIO }}"
         )
         return files
     }
 
-    private fun downloadAndSaveFile(fileName: String, type: MediaType, deviceIp: String): String? {
+    /**
+     * Download a single file and save to gallery.
+     * Includes per-file progress tracking and speed calculation (mirrors official).
+     */
+    private fun downloadAndSaveFile(
+            fileName: String,
+            type: MediaType,
+            deviceIp: String,
+            currentIndex: Int = 0,
+            totalFiles: Int = 0
+    ): String? {
         return try {
             val url = "http://$deviceIp/files/$fileName"
             val conn = openConnection(URL(url))
@@ -468,13 +605,26 @@ class MediaSyncManager(private val context: Context) {
                 Log.e(TAG, "Download $fileName failed: ${conn.responseCode}")
                 return null
             }
+            val totalBytes = conn.contentLength.toLong()
             val takenMs = parseTakenTimeMs(fileName) ?: System.currentTimeMillis()
+
+            // Wrap InputStream to track download progress
             val result =
-                    conn.inputStream.use { input ->
+                    conn.inputStream.use { rawInput ->
+                        val trackingInput = ProgressInputStream(rawInput, totalBytes) { downloaded, total ->
+                            val progress = if (total > 0) (downloaded * 100 / total).toInt() else -1
+                            val speed = speedCalc.update(downloaded)
+                            if (currentIndex > 0) {
+                                _syncState.value = SyncState.Syncing(
+                                        currentIndex, totalFiles, fileName,
+                                        speed = speed, fileProgress = progress
+                                )
+                            }
+                        }
                         when (type) {
-                            MediaType.PHOTO -> saveJpegToGallery(input, fileName, takenMs)
-                            MediaType.VIDEO -> saveMp4ToGallery(input, fileName, takenMs)
-                            MediaType.AUDIO -> saveOpusToLibrary(input, fileName, takenMs)
+                            MediaType.PHOTO -> saveJpegToGallery(trackingInput, fileName, takenMs)
+                            MediaType.VIDEO -> saveMp4ToGallery(trackingInput, fileName, takenMs)
+                            MediaType.AUDIO -> saveOpusToLibrary(trackingInput, fileName, takenMs)
                         }
                     }
             if (result.success) {
@@ -518,7 +668,7 @@ class MediaSyncManager(private val context: Context) {
         }
 
         // 2. Match known glasses name prefixes
-        val glassesPatterns = listOf("AIMB", "Cyan", "HeyCyan", "G3_", "G4_", "GLASSES", "glasses")
+        val glassesPatterns = listOf("AIMB", "Cyan", "HeyCyan", "G3_", "G4_", "E03", "GLASSES", "glasses")
         val byPattern =
                 peers.firstOrNull { device ->
                     glassesPatterns.any { pattern ->
@@ -533,17 +683,15 @@ class MediaSyncManager(private val context: Context) {
         // 3. Skip known non-glasses devices, pick remaining
         val skipPatterns =
                 listOf(
-                        "电视",
-                        "TV",
-                        "Printer",
-                        "打印",
-                        "Phone",
-                        "手机",
-                        "Speaker",
-                        "音箱",
-                        "Chromecast",
-                        "Fire",
-                        "Roku"
+                        "电视", "TV",
+                        "Printer", "打印",
+                        "DIRECT-",           // Wi-Fi Direct printers, projectors, etc.
+                        "HP ", "HP_",        // HP printers
+                        "Canon", "Epson", "Brother",  // Other printers
+                        "Phone", "手机",
+                        "Speaker", "音箱",
+                        "Chromecast", "Fire", "Roku",
+                        "Smart Tank",        // HP Smart Tank (exact match from log)
                 )
         val filtered =
                 peers.filter { device ->
@@ -634,20 +782,28 @@ class MediaSyncManager(private val context: Context) {
     }
 
     private fun mediaConfigOk(ip: String, timeoutMs: Int): Boolean {
-        return try {
-            val conn = openConnection(URL("http://$ip/files/media.config"))
-            conn.connectTimeout = timeoutMs
-            conn.readTimeout = timeoutMs
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            conn.disconnect()
-            val ok = code == HttpURLConnection.HTTP_OK
-            if (ok) Log.i(TAG, "✓ media.config OK at $ip")
-            ok
-        } catch (e: Exception) {
-            Log.d(TAG, "media.config probe $ip failed: ${e.message}")
-            false
+        // Probe both photo.txt (official) and media.config (custom)
+        val probeUrls = listOf(
+                "http://$ip/files/photo.txt",
+                "http://$ip/files/media.config"
+        )
+        for (probeUrl in probeUrls) {
+            try {
+                val conn = openConnection(URL(probeUrl))
+                conn.connectTimeout = timeoutMs
+                conn.readTimeout = timeoutMs
+                conn.requestMethod = "GET"
+                val code = conn.responseCode
+                conn.disconnect()
+                if (code == HttpURLConnection.HTTP_OK) {
+                    Log.i(TAG, "✓ file list OK at $probeUrl")
+                    return true
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Probe $probeUrl failed: ${e.message}")
+            }
         }
+        return false
     }
 
     private fun scanSubnet(prefix: String): String? {
@@ -846,6 +1002,86 @@ class MediaSyncManager(private val context: Context) {
             val wifiP2pManager = WifiP2pManagerSingleton.getInstance(context)
             wifiP2pManager.unregisterReceiver()
         } catch (_: Exception) {}
+    }
+
+    // ── Speed Calculator (mirrors official DownloadSpeedCalculator) ──
+
+    private class SpeedCalculator {
+        @Volatile private var startTime = 0L
+        @Volatile private var lastBytes = 0L
+        @Volatile private var lastTime = 0L
+        @Volatile private var lastSpeed = ""
+
+        fun start() {
+            startTime = System.currentTimeMillis()
+            lastBytes = 0
+            lastTime = startTime
+            lastSpeed = ""
+        }
+
+        /** Returns human-readable speed string (e.g., "1.2 MB/s" or "456 KB/s"). */
+        fun update(bytesDownloaded: Long): String {
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastTime
+            // Update at most every 500ms to avoid jitter
+            if (elapsed < 500) return lastSpeed
+            val deltaBytes = bytesDownloaded - lastBytes
+            if (deltaBytes <= 0 || elapsed <= 0) return lastSpeed
+            val bytesPerSec = deltaBytes * 1000.0 / elapsed
+            lastBytes = bytesDownloaded
+            lastTime = now
+            lastSpeed = when {
+                bytesPerSec >= 1_048_576 -> String.format("%.1f MB/s", bytesPerSec / 1_048_576)
+                bytesPerSec >= 1024 -> String.format("%.0f KB/s", bytesPerSec / 1024)
+                else -> String.format("%.0f B/s", bytesPerSec)
+            }
+            return lastSpeed
+        }
+    }
+
+    /**
+     * InputStream wrapper that reports download progress via callback.
+     * Callback is throttled to avoid excessive UI updates.
+     */
+    private class ProgressInputStream(
+            private val delegate: InputStream,
+            private val totalBytes: Long,
+            private val onProgress: (downloaded: Long, total: Long) -> Unit
+    ) : InputStream() {
+        private var bytesRead = 0L
+        private var lastReportTime = 0L
+
+        override fun read(): Int {
+            val b = delegate.read()
+            if (b >= 0) {
+                bytesRead++
+                maybeReport()
+            }
+            return b
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            val n = delegate.read(b, off, len)
+            if (n > 0) {
+                bytesRead += n
+                maybeReport()
+            }
+            return n
+        }
+
+        private fun maybeReport() {
+            val now = System.currentTimeMillis()
+            if (now - lastReportTime >= 300) {  // report at most ~3x/sec
+                lastReportTime = now
+                onProgress(bytesRead, totalBytes)
+            }
+        }
+
+        override fun close() {
+            delegate.close()
+            // Final report
+            onProgress(bytesRead, totalBytes)
+        }
     }
 
     /** Scan MediaStore for previously downloaded CyanBridge files. */

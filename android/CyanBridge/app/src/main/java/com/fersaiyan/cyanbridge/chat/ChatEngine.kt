@@ -200,8 +200,8 @@ object ChatEngine {
         val messageId = UUID.randomUUID().toString()
 
         if (imageFile == null) {
-            Log.e(TAG_FLOW, "Vision: thumbnail capture failed")
-            val errText = "拍照失败，请确认眼镜已连接并重试"
+            Log.e(TAG_FLOW, "Vision: thumbnail capture failed (all retries exhausted)")
+            val errText = "拍照失败，已重试多次仍无法获取清晰图像。请稍等几秒后再试，或确认眼镜摄像头未被遮挡。"
             val errAudio = ttsService.synthesizeToFile(errText, messageId)
             val errMsg =
                     ChatMessageEntity(
@@ -214,6 +214,16 @@ object ChatEngine {
                             audioPath = errAudio,
                     )
             repository.insert(errMsg)
+            return
+        }
+
+        // ── Validate file before sending to VL ──
+        val fileSize = imageFile.length()
+        val fileBytes = imageFile.readBytes()
+        val fileHead = fileBytes.take(16).joinToString("") { "%02x".format(it) }
+        Log.i(TAG_FLOW, "Vision: imageFile=${imageFile.absolutePath} size=$fileSize head=$fileHead")
+        if (fileSize < 100) {
+            Log.e(TAG_FLOW, "Vision: image file too small ($fileSize bytes), skipping VL")
             return
         }
 

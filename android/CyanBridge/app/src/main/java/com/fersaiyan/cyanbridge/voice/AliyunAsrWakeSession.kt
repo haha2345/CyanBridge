@@ -122,31 +122,14 @@ class AliyunAsrWakeSession(
             return
         }
 
-        // Verify token is obtainable
-        val token = try {
-            NlsTokenManager.getTokenBlocking()
-        } catch (e: Exception) {
-            running.set(false)
-            logStatus("Failed to get NLS token: ${e.message}")
-            return
-        }
-
         logStatus("Aliyun ASR: starting ($source)")
-        Log.i(
-                TAG,
-                "APPKEY=${BuildConfig.ALIYUN_ASR_APPKEY.take(6)}... TOKEN=${token.take(6)}..."
-        )
 
         audioQueue.clear()
         opusFrameCount = 0
         pcmBytesTotal = 0
         opusIndex = 0
 
-        if (!ensureNuiInitialized()) {
-            running.set(false)
-            return
-        }
-
+        // Set up Opus decoder (no network I/O, safe on any thread)
         opusManager =
                 try {
                     OpusManager().also { mgr ->
@@ -166,7 +149,27 @@ class AliyunAsrWakeSession(
 
         LargeDataHandler.getInstance().initPackageNotify(aiChatListener)
 
+        // Token fetch & NUI init involve network I/O — must run off the main thread.
+        // NetworkOnMainThreadException.message is null, which was the "Failed to get NLS token: null" bug.
         scope.launch {
+            val token = try {
+                NlsTokenManager.getTokenBlocking()
+            } catch (e: Exception) {
+                running.set(false)
+                logStatus("Failed to get NLS token: ${e.message}")
+                return@launch
+            }
+
+            Log.i(
+                    TAG,
+                    "APPKEY=${BuildConfig.ALIYUN_ASR_APPKEY.take(6)}... TOKEN=${token.take(6)}..."
+            )
+
+            if (!ensureNuiInitialized()) {
+                running.set(false)
+                return@launch
+            }
+
             val nui = nuiInstance ?: return@launch
             val params = genParams()
             val ret = nui.setParams(params)

@@ -2190,6 +2190,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             var hadData = false
             var chunkCount = 0
 
+            // ── Page-level deduplication (same fix as GlassesRepository) ──
+            val receivedPages = sortedMapOf<Int, ByteArray>()
+            val seenHashes = mutableSetOf<Long>()
+            var totalPagesFromProtocol = -1
+            var usesPageProtocol = false
+
             try {
                 // Trigger "smart picture recognition / thumbnail capture" as documented in the SDK PDF:
                 // glassesControl([0x02,0x01,0x06, thumbnailSize, thumbnailSize, 0x02])
@@ -2247,24 +2253,53 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     if (done.isCompleted || aiVisionMvpJob?.isActive != true) return@getPictureThumbnails
 
                     if (data != null && data.isNotEmpty()) {
-                        hadData = true
-                        chunkCount++
-                        if (chunkCount == 1) {
-                            Log.i("AiVisionMvp", "thumbnail first chunk size=${data.size}")
-                        }
-                        try {
-                            buf.write(data)
-                        } catch (e: Exception) {
-                            Log.e("AiVisionMvp", "Failed to append thumbnail chunk: ${e.message}")
-                            done.complete(false)
-                            return@getPictureThumbnails
+                        // ── bcfd page protocol dedup ──
+                        if (data.size > 11 &&
+                            data[0] == 0xBC.toByte() && data[1] == 0xFD.toByte()
+                        ) {
+                            usesPageProtocol = true
+                            val pageNum = data[9].toInt() and 0xFF
+                            totalPagesFromProtocol = data[7].toInt() and 0xFF
+                            if (pageNum in receivedPages) {
+                                Log.d("AiVisionMvp", "Skipping duplicate page $pageNum/$totalPagesFromProtocol")
+                                return@getPictureThumbnails
+                            }
+                            val payload = data.copyOfRange(11, data.size)
+                            receivedPages[pageNum] = payload
+                            hadData = true
+                            chunkCount++
+                            if (chunkCount == 1) {
+                                Log.i("AiVisionMvp", "thumbnail first page size=${payload.size}")
+                            }
+                        } else {
+                            // Fallback: content fingerprint dedup
+                            val fp = chunkFingerprintLocal(data)
+                            if (!seenHashes.add(fp)) {
+                                Log.d("AiVisionMvp", "Skipping duplicate chunk (content hash)")
+                                return@getPictureThumbnails
+                            }
+                            hadData = true
+                            chunkCount++
+                            if (chunkCount == 1) {
+                                Log.i("AiVisionMvp", "thumbnail first chunk size=${data.size}")
+                            }
+                            try {
+                                buf.write(data)
+                            } catch (e: Exception) {
+                                Log.e("AiVisionMvp", "Failed to append thumbnail chunk: ${e.message}")
+                                done.complete(false)
+                                return@getPictureThumbnails
+                            }
                         }
                     }
 
                     if (isComplete) {
+                        val totalBytes = if (usesPageProtocol)
+                            receivedPages.values.sumOf { it.size }
+                        else buf.size()
                         Log.i(
                             "AiVisionMvp",
-                            "thumbnail complete chunks=$chunkCount bytes=${buf.size()} hadData=$hadData"
+                            "thumbnail complete chunks=$chunkCount bytes=$totalBytes hadData=$hadData"
                         )
                         done.complete(hadData)
                     }
@@ -2288,7 +2323,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     return@launch
                 }
 
-                val bytes = buf.toByteArray()
+                // Reassemble from deduplicated pages or fallback buffer
+                val bytes = if (usesPageProtocol && receivedPages.isNotEmpty()) {
+                    val assembled = ByteArrayOutputStream()
+                    val maxPage = totalPagesFromProtocol.takeIf { it > 0 }
+                        ?: ((receivedPages.keys.maxOrNull() ?: 0) + 1)
+                    for (page in 0 until maxPage) {
+                        receivedPages[page]?.let { assembled.write(it) }
+                            ?: Log.w("AiVisionMvp", "Missing page $page/$maxPage")
+                    }
+                    Log.i("AiVisionMvp", "Assembled ${receivedPages.size}/$maxPage unique pages, ${assembled.size()} bytes")
+                    assembled.toByteArray()
+                } else {
+                    buf.toByteArray()
+                }
                 if (bytes.isEmpty()) {
                     Log.e("AiVisionMvp", "Thumbnail capture completed but buffer empty")
                     withContext(Dispatchers.Main) {
@@ -2342,6 +2390,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 }
             }
         }
+    }
+
+    /** Fast content fingerprint for chunk deduplication */
+    private fun chunkFingerprintLocal(data: ByteArray): Long {
+        if (data.isEmpty()) return 0L
+        var h = data.size.toLong()
+        val n = minOf(64, data.size)
+        for (i in 0 until n) { h = h * 31 + (data[i].toLong() and 0xFF) }
+        if (data.size > n) {
+            for (i in maxOf(0, data.size - 64) until data.size) {
+                h = h * 31 + (data[i].toLong() and 0xFF)
+            }
+        }
+        return h
     }
 
     private fun exitTransferModeAfterDownload() {
@@ -2771,15 +2833,38 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     Log.i("DeviceNotify", "AI Photo Button Pressed - Starting Chunked Download")
                     val fileName = "AI_Thumb_${System.currentTimeMillis()}.jpg"
                     val file = File(getExternalFilesDir("DCIM"), fileName)
-                    
-                    // The SDK sends the image in multiple chunks. 
-                    // We must append them to the file and wait for isComplete (success parameter).
+
+                    // Page-level dedup: collect unique pages, write once at completion
+                    val pages = sortedMapOf<Int, ByteArray>()
+                    val hashes = mutableSetOf<Long>()
+                    val fallbackBuf = ByteArrayOutputStream()
+                    var pageProto = false
+
                     LargeDataHandler.getInstance().getPictureThumbnails { _, isComplete, data ->
-                        if (data != null) {
+                        if (data != null && data.isNotEmpty()) {
                             try {
-                                FileOutputStream(file, true).use { it.write(data) }
+                                if (data.size > 11 &&
+                                    data[0] == 0xBC.toByte() && data[1] == 0xFD.toByte()
+                                ) {
+                                    pageProto = true
+                                    val pg = data[9].toInt() and 0xFF
+                                    if (pg in pages) return@getPictureThumbnails
+                                    pages[pg] = data.copyOfRange(11, data.size)
+                                } else {
+                                    val fp = chunkFingerprintLocal(data)
+                                    if (!hashes.add(fp)) return@getPictureThumbnails
+                                    fallbackBuf.write(data)
+                                }
                                 if (isComplete) {
-                                    Log.i("DeviceNotify", "Thumbnail transfer complete: ${file.absolutePath} (${file.length()} bytes)")
+                                    val assembled = if (pageProto && pages.isNotEmpty()) {
+                                        val out = ByteArrayOutputStream()
+                                        for ((_, payload) in pages) out.write(payload)
+                                        out.toByteArray()
+                                    } else {
+                                        fallbackBuf.toByteArray()
+                                    }
+                                    FileOutputStream(file).use { it.write(assembled) }
+                                    Log.i("DeviceNotify", "Thumbnail transfer complete: ${file.absolutePath} (${file.length()} bytes, ${pages.size} pages)")
                                     if (isAiHijackEnabled) {
                                         triggerAssistantImageQuery(file.absolutePath)
                                     }

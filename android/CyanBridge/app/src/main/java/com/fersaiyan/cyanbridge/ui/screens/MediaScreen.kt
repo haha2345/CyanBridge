@@ -470,20 +470,30 @@ private fun SyncStatusBar(syncState: MediaSyncManager.SyncState) {
                 }
                 is MediaSyncManager.SyncState.Syncing -> {
                         Column {
+                                val speedText = if (syncState.speed.isNotEmpty()) "  ${syncState.speed}" else ""
+                                val progressText = if (syncState.fileProgress in 0..100) " ${syncState.fileProgress}%" else ""
                                 Text(
-                                        "下载中 ${syncState.current}/${syncState.total}: ${syncState.fileName}",
+                                        "下载中 ${syncState.current}/${syncState.total}: ${syncState.fileName}$progressText$speedText",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.primary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                        progress = {
-                                                syncState.current.toFloat() / syncState.total
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                )
+                                // Show single-file progress when available, otherwise overall progress
+                                if (syncState.fileProgress in 0..100) {
+                                        LinearProgressIndicator(
+                                                progress = { syncState.fileProgress / 100f },
+                                                modifier = Modifier.fillMaxWidth()
+                                        )
+                                } else {
+                                        LinearProgressIndicator(
+                                                progress = {
+                                                        syncState.current.toFloat() / syncState.total
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                        )
+                                }
                         }
                 }
                 is MediaSyncManager.SyncState.Done -> {

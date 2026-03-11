@@ -9,10 +9,35 @@ import java.nio.charset.StandardCharsets
  * Small helper that watches BLE payloads and tries to extract an IPv4
  * address. We feed it from the Bluetooth callbacks and then read the
  * last-seen IP from the data download flow.
+ *
+ * Also tracks bcfd thumbnail page numbers from raw BLE notifications so
+ * that [GlassesRepository] can reorder pages that arrive out of sequence.
  */
 class BleIpBridge {
     private val _ip = MutableStateFlow<String?>(null)
     val ip = _ip.asStateFlow()
+
+    // ── Thumbnail page tracking ──────────────────────────────
+    // The SDK strips the bcfd header before calling getPictureThumbnails,
+    // but raw BLE notifications still contain it. We hash the first payload
+    // bytes (offset 11+) and map them to page numbers so the callback can
+    // look up the correct page for ordered reassembly.
+    private val _thumbPageMap = mutableMapOf<Long, Pair<Int, Int>>() // payloadHash → (page#, totalPages)
+    val thumbPageMap: Map<Long, Pair<Int, Int>> get() = _thumbPageMap
+
+    fun clearThumbPageMap() {
+        _thumbPageMap.clear()
+    }
+
+    /** Hash [len] bytes of [data] starting at [offset]. */
+    fun payloadHash(data: ByteArray, offset: Int = 0, len: Int = 48): Long {
+        var h = 0L
+        val end = minOf(offset + len, data.size)
+        for (i in offset until end) {
+            h = h * 31 + (data[i].toLong() and 0xFF)
+        }
+        return h
+    }
 
     private fun isMostlyPrintableAscii(bytes: ByteArray, len: Int = bytes.size): Boolean {
         if (bytes.isEmpty() || len <= 0) return true
@@ -41,6 +66,22 @@ class BleIpBridge {
     }
 
     fun onCharacteristicChanged(source: String, value: ByteArray) {
+        // ── Detect bcfd thumbnail page header in raw BLE notification ──
+        // Format: bc fd fa 03 [xx xx] 01 [totalPages] 00 [pageNum] 00 [payload...]
+        // The first sub-chunk of each page has this header. Subsequent sub-chunks
+        // in the same page do NOT have it.
+        if (value.size > 20 &&
+            value[0] == 0xBC.toByte() && value[1] == 0xFD.toByte() &&
+            value[2] == 0xFA.toByte() && value[3] == 0x03.toByte()
+        ) {
+            val totalPages = value[7].toInt() and 0xFF
+            val pageNum = value[9].toInt() and 0xFF
+            // Hash payload bytes starting at offset 11 — this matches the start
+            // of the data that getPictureThumbnails callback will receive.
+            val key = payloadHash(value, offset = 11)
+            _thumbPageMap[key] = Pair(pageNum, totalPages)
+        }
+
         // Only decode a bounded prefix to avoid large allocations when we accidentally
         // receive binary streams (e.g., JPEG thumbnail chunks).
         val scanLen = minOf(value.size, 256)
